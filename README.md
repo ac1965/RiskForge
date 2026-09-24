@@ -36,9 +36,17 @@ managed with golang-migrate — see [migrations/README.md](migrations/README.md)
 
 ## Status
 
-Phase 1 (AGENTS.md §45) is in progress: the Asset, Software, Vulnerability,
-and Finding domain models are implemented under `internal/domain/`, with
-unit tests covering validation and the Finding status lifecycle. The
-application layer, PostgreSQL persistence, migrations, and CLI wiring
+Phase 1 (AGENTS.md §45) domain models — Asset, Software, Vulnerability,
+Finding — are implemented under `internal/domain/`, with unit tests
+covering validation and the Finding status lifecycle.
+
+Phase 2 domain models — Risk and Priority — are also implemented:
+`internal/domain/risk` (the Risk Engine, §8) and `internal/domain/priority`
+(the Priority Engine, §12) each compose pluggable providers and a Policy,
+producing an explainable Assessment/Decision (§40) without hardcoding the
+scoring formula. The Dashboard part of Phase 2 (§41, frontend) is not
+started (§25A.7: frontend work begins after backend/CLI/API).
+
+The application layer, PostgreSQL persistence, migrations, and CLI wiring
 (currently stubs per AGENTS.md §27) are not yet implemented. See
 [docs/adr/](docs/adr/) for recorded design decisions.

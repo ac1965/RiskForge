@@ -63,6 +63,18 @@ aggregate was deliberately not built — see
 [docs/adr/0007-exception-policy-audit.md](docs/adr/0007-exception-policy-audit.md)
 for why.
 
-The application layer, PostgreSQL persistence, migrations, and CLI wiring
-(currently stubs per AGENTS.md §27) are not yet implemented. See
-[docs/adr/](docs/adr/) for recorded design decisions.
+The Application layer's Named APIs (AGENTS.md §26) are also implemented in
+`internal/application`: `DiscoverAssets`, `InventoryAsset`,
+`CorrelateFindings`, `AssessRisk`, `CalculatePriority`,
+`CreateRemediationPlan`/`ApproveRemediationPlan`/`PreviewRemediation`/
+`ExecuteRemediation`, `VerifyRemediation`, `RecordEvidence`, and the
+Exception workflow (`RequestException`, `ApproveException`,
+`RejectException`, `ExpireException`, `RevokeException`). These depend
+only on repository port interfaces (`ports.go`) and the Phase 2 engines —
+no database yet. See
+[docs/adr/0008-application-layer.md](docs/adr/0008-application-layer.md)
+for the ports design and which operations are audited.
+
+PostgreSQL persistence, migrations, and CLI wiring (currently stubs per
+AGENTS.md §27) are not yet implemented. See [docs/adr/](docs/adr/) for
+recorded design decisions.

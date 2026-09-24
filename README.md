@@ -36,7 +36,9 @@ managed with golang-migrate — see [migrations/README.md](migrations/README.md)
 
 ## Status
 
-Phase 1 (AGENTS.md §45) is in progress: Asset, Software, Vulnerability, and
-Finding domain packages exist as skeletons under `internal/domain/` awaiting
-implementation. The CLI (`internal/cli/`) is wired per AGENTS.md §27 with
-stub commands. See [docs/adr/](docs/adr/) for recorded design decisions.
+Phase 1 (AGENTS.md §45) is in progress: the Asset, Software, Vulnerability,
+and Finding domain models are implemented under `internal/domain/`, with
+unit tests covering validation and the Finding status lifecycle. The
+application layer, PostgreSQL persistence, migrations, and CLI wiring
+(currently stubs per AGENTS.md §27) are not yet implemented. See
+[docs/adr/](docs/adr/) for recorded design decisions.

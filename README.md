@@ -47,6 +47,14 @@ producing an explainable Assessment/Decision (§40) without hardcoding the
 scoring formula. The Dashboard part of Phase 2 (§41, frontend) is not
 started (§25A.7: frontend work begins after backend/CLI/API).
 
+Phase 3 domain models — Remediation, Verification, Evidence — are also
+implemented: `internal/domain/remediation` (RemediationPlan, §13–§14),
+`internal/domain/verification` (§16), and `internal/domain/evidence`
+(§17). Automatic-remediation policy configuration (§15's
+`auto_remediation_policy`) is deferred to the Phase 4 Policy Engine (§23);
+what exists now is the structural guarantee that a Plan can never execute
+without first being approved.
+
 The application layer, PostgreSQL persistence, migrations, and CLI wiring
 (currently stubs per AGENTS.md §27) are not yet implemented. See
 [docs/adr/](docs/adr/) for recorded design decisions.

@@ -1,0 +1,24 @@
+# Build artifacts
+/bin/
+/dist/
+/riskforge
+/riskforge-agent
+/riskforge-worker
+
+# Go
+*.test
+*.out
+vendor/
+
+# Environment / secrets (see AGENTS.md §31 Security)
+.env
+.env.*
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

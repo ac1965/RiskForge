@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: riskforge
+      POSTGRES_PASSWORD: riskforge
+      POSTGRES_DB: riskforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - riskforge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riskforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  riskforge-postgres-data:

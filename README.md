@@ -93,5 +93,18 @@ Repository behavior is verified against a real PostgreSQL container via
 testcontainers-go (AGENTS.md §25A.6): `make test` never touches Docker,
 `make test-integration` does.
 
-CLI wiring (currently stubs per AGENTS.md §27) is not yet implemented.
-See [docs/adr/](docs/adr/) for recorded design decisions.
+CLI wiring is also implemented: `cmd/riskforge/main.go` is the
+composition root (connects PostgreSQL, builds the Risk/Priority engines,
+wires an `application.Service`), and `internal/cli` depends only on
+`internal/application`, never on `internal/infrastructure` directly. The
+command tree covers everything in AGENTS.md §27 plus a few commands
+needed to make the system usable end-to-end (`asset discover`,
+`vulnerability add`, `finding correlate`, `remediation
+approve`/`preview`/`execute`, the `exception` workflow, `evidence
+record`, `priority calculate`, `migrate`) — see
+[docs/adr/0010-cli-wiring.md](docs/adr/0010-cli-wiring.md) for why each
+was added. Verified end-to-end against a real PostgreSQL instance: asset
+→ vulnerability → finding → risk → priority → remediation (propose →
+approve → execute) → evidence → verify, and separately the exception
+request → approve → expire lifecycle, each driving the expected Finding
+status transition.

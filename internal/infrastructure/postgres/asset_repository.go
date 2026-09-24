@@ -116,6 +116,28 @@ func (r *AssetRepository) FindByID(ctx context.Context, id asset.ID) (*asset.Ass
 	return a, nil
 }
 
+// List returns every Asset, ordered by hostname.
+func (r *AssetRepository) List(ctx context.Context) ([]*asset.Asset, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+assetColumns+` FROM assets ORDER BY hostname`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list assets: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*asset.Asset
+	for rows.Next() {
+		a, err := scanAsset(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan asset: %w", err)
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: list assets: %w", err)
+	}
+	return out, nil
+}
+
 // FindByHostname returns the Asset with the given hostname, or (nil, nil)
 // if none exists. This is DiscoverAssets's idempotency key (AGENTS.md
 // §37).

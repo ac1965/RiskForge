@@ -97,3 +97,25 @@ func (r *FindingRepository) FindByAssetAndVulnerability(ctx context.Context, ass
 	}
 	return f, nil
 }
+
+// List returns every Finding, most recently detected first.
+func (r *FindingRepository) List(ctx context.Context) ([]*finding.Finding, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+findingColumns+` FROM findings ORDER BY detected_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list findings: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*finding.Finding
+	for rows.Next() {
+		f, err := scanFinding(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan finding: %w", err)
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: list findings: %w", err)
+	}
+	return out, nil
+}

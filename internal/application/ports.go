@@ -30,6 +30,8 @@ type AssetRepository interface {
 	// §37): repeated discovery of the same host must update, not
 	// duplicate, its Asset record.
 	FindByHostname(ctx context.Context, hostname string) (*asset.Asset, error)
+	// List returns every Asset, for `riskforge asset list` (AGENTS.md §27).
+	List(ctx context.Context) ([]*asset.Asset, error)
 }
 
 // SoftwareRepository persists and retrieves SoftwareInstallations.
@@ -56,6 +58,9 @@ type FindingRepository interface {
 	// asset confirms the existing Finding instead of creating a
 	// duplicate.
 	FindByAssetAndVulnerability(ctx context.Context, assetID asset.ID, vulnID vulnerability.ID) (*finding.Finding, error)
+	// List returns every Finding, for `riskforge finding list` (AGENTS.md
+	// §27).
+	List(ctx context.Context) ([]*finding.Finding, error)
 }
 
 // RiskAssessmentRepository persists and retrieves RiskAssessments.
@@ -68,12 +73,19 @@ type RiskAssessmentRepository interface {
 type PriorityDecisionRepository interface {
 	Save(ctx context.Context, d *priority.Decision) error
 	FindLatestByFinding(ctx context.Context, findingID finding.ID) (*priority.Decision, error)
+	// ListLatest returns the most recent PriorityDecision for every
+	// Finding that has one, for `riskforge priority list` (AGENTS.md
+	// §27).
+	ListLatest(ctx context.Context) ([]*priority.Decision, error)
 }
 
 // RemediationPlanRepository persists and retrieves RemediationPlans.
 type RemediationPlanRepository interface {
 	Save(ctx context.Context, p *remediation.Plan) error
 	FindByID(ctx context.Context, id remediation.ID) (*remediation.Plan, error)
+	// List returns every RemediationPlan, for `riskforge remediation list`
+	// (AGENTS.md §27).
+	List(ctx context.Context) ([]*remediation.Plan, error)
 }
 
 // VerificationRepository persists Verifications.
@@ -91,6 +103,9 @@ type EvidenceRepository interface {
 type ExceptionRepository interface {
 	Save(ctx context.Context, e *exception.Exception) error
 	FindByID(ctx context.Context, id exception.ID) (*exception.Exception, error)
+	// List returns every Exception, for `riskforge exception list`
+	// (AGENTS.md §27).
+	List(ctx context.Context) ([]*exception.Exception, error)
 }
 
 // AuditRepository appends audit.Entry records. There is deliberately no

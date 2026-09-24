@@ -84,3 +84,26 @@ func (r *RemediationPlanRepository) FindByID(ctx context.Context, id remediation
 	}
 	return p, nil
 }
+
+// List returns every RemediationPlan, ordered by status then id (Plan has
+// no creation timestamp of its own — see AGENTS.md §14's field list).
+func (r *RemediationPlanRepository) List(ctx context.Context) ([]*remediation.Plan, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+remediationPlanColumns+` FROM remediation_plans ORDER BY status, id`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: list remediation plans: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*remediation.Plan
+	for rows.Next() {
+		p, err := scanRemediationPlan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: scan remediation plan: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: list remediation plans: %w", err)
+	}
+	return out, nil
+}

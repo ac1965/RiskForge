@@ -46,6 +46,15 @@ func (r *assetRepo) FindByID(_ context.Context, id asset.ID) (*asset.Asset, erro
 	return &cp, nil
 }
 
+func (r *assetRepo) List(_ context.Context) ([]*asset.Asset, error) {
+	out := make([]*asset.Asset, 0, len(r.byID))
+	for _, a := range r.byID {
+		cp := *a
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
 func (r *assetRepo) FindByHostname(_ context.Context, hostname string) (*asset.Asset, error) {
 	id, ok := r.byHostname[hostname]
 	if !ok {
@@ -134,6 +143,15 @@ func (r *findingRepo) FindByAssetAndVulnerability(_ context.Context, assetID ass
 	return nil, nil
 }
 
+func (r *findingRepo) List(_ context.Context) ([]*finding.Finding, error) {
+	out := make([]*finding.Finding, 0, len(r.byID))
+	for _, f := range r.byID {
+		cp := *f
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
 type riskAssessmentRepo struct {
 	byFinding map[finding.ID]*risk.Assessment
 }
@@ -180,6 +198,15 @@ func (r *priorityDecisionRepo) FindLatestByFinding(_ context.Context, findingID 
 	return &cp, nil
 }
 
+func (r *priorityDecisionRepo) ListLatest(_ context.Context) ([]*priority.Decision, error) {
+	out := make([]*priority.Decision, 0, len(r.byFinding))
+	for _, d := range r.byFinding {
+		cp := *d
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
 type remediationPlanRepo struct {
 	byID map[remediation.ID]*remediation.Plan
 }
@@ -201,6 +228,15 @@ func (r *remediationPlanRepo) FindByID(_ context.Context, id remediation.ID) (*r
 	}
 	cp := *p
 	return &cp, nil
+}
+
+func (r *remediationPlanRepo) List(_ context.Context) ([]*remediation.Plan, error) {
+	out := make([]*remediation.Plan, 0, len(r.byID))
+	for _, p := range r.byID {
+		cp := *p
+		out = append(out, &cp)
+	}
+	return out, nil
 }
 
 type verificationRepo struct {
@@ -260,6 +296,15 @@ func (r *exceptionRepo) FindByID(_ context.Context, id exception.ID) (*exception
 	}
 	cp := *e
 	return &cp, nil
+}
+
+func (r *exceptionRepo) List(_ context.Context) ([]*exception.Exception, error) {
+	out := make([]*exception.Exception, 0, len(r.byID))
+	for _, e := range r.byID {
+		cp := *e
+		out = append(out, &cp)
+	}
+	return out, nil
 }
 
 type auditRepo struct {

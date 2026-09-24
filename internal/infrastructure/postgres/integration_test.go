@@ -678,3 +678,206 @@ func TestAuditRepository(t *testing.T) {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
 }
+
+func TestAssetRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	repo := NewAssetRepository(db)
+
+	if err := repo.Save(ctx, mustAsset(t)); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	other := mustAsset(t)
+	other.Hostname = "host-02"
+	if err := repo.Save(ctx, other); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("List() returned %d assets, want 2", len(list))
+	}
+}
+
+func TestFindingRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	v := mustVulnerability(t)
+	if err := NewVulnerabilityRepository(db).Save(ctx, v); err != nil {
+		t.Fatalf("save vulnerability: %v", err)
+	}
+	mustFinding(t, db, a, v)
+
+	list, err := NewFindingRepository(db).List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("List() returned %d findings, want 1", len(list))
+	}
+}
+
+func TestRemediationPlanRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	v := mustVulnerability(t)
+	if err := NewVulnerabilityRepository(db).Save(ctx, v); err != nil {
+		t.Fatalf("save vulnerability: %v", err)
+	}
+	f := mustFinding(t, db, a, v)
+
+	plan, err := remediation.New(remediation.Params{
+		FindingID:   f.ID,
+		ActionType:  remediation.ActionPatch,
+		Description: "Apply vendor patch",
+		ProposedBy:  "alice",
+		Rollback:    remediation.Rollback{Capable: true, Plan: "Downgrade package"},
+	})
+	if err != nil {
+		t.Fatalf("remediation.New() unexpected error: %v", err)
+	}
+	repo := NewRemediationPlanRepository(db)
+	if err := repo.Save(ctx, plan); err != nil {
+		t.Fatalf("save remediation plan: %v", err)
+	}
+
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("List() returned %d plans, want 1", len(list))
+	}
+}
+
+func TestExceptionRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	v := mustVulnerability(t)
+	if err := NewVulnerabilityRepository(db).Save(ctx, v); err != nil {
+		t.Fatalf("save vulnerability: %v", err)
+	}
+	f := mustFinding(t, db, a, v)
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	e, err := exception.New(exception.Params{
+		FindingID:   f.ID,
+		Reason:      "Confirmed false positive",
+		RequestedBy: "alice",
+		CreatedAt:   created,
+		ExpiresAt:   created.Add(90 * 24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("exception.New() unexpected error: %v", err)
+	}
+	repo := NewExceptionRepository(db)
+	if err := repo.Save(ctx, e); err != nil {
+		t.Fatalf("save exception: %v", err)
+	}
+
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("List() returned %d exceptions, want 1", len(list))
+	}
+}
+
+// TestPriorityDecisionRepositoryListLatest confirms ListLatest's
+// `DISTINCT ON (finding_id) ... ORDER BY finding_id, decided_at DESC`
+// query actually returns the newest decision per finding, not an
+// arbitrary one.
+func TestPriorityDecisionRepositoryListLatest(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	v := mustVulnerability(t)
+	if err := NewVulnerabilityRepository(db).Save(ctx, v); err != nil {
+		t.Fatalf("save vulnerability: %v", err)
+	}
+	f := mustFinding(t, db, a, v)
+
+	ra, err := risk.New(risk.Params{
+		FindingID:  f.ID,
+		Score:      50,
+		Level:      risk.LevelMedium,
+		Factors:    []explainability.Factor{{Name: "severity", Value: "medium", Reason: "test"}},
+		PolicyName: "baseline",
+		AssessedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("risk.New() unexpected error: %v", err)
+	}
+	if err := NewRiskAssessmentRepository(db).Save(ctx, ra); err != nil {
+		t.Fatalf("save risk assessment: %v", err)
+	}
+
+	repo := NewPriorityDecisionRepository(db)
+	older, err := priority.New(priority.Params{
+		FindingID:        f.ID,
+		RiskAssessmentID: ra.ID,
+		Rank:             40,
+		Level:            priority.LevelMedium,
+		Factors:          []explainability.Factor{{Name: "test", Value: "1", Reason: "test"}},
+		SLADeadline:      time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		PolicyName:       "baseline",
+		DecidedAt:        time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("priority.New() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, older); err != nil {
+		t.Fatalf("save priority decision: %v", err)
+	}
+
+	newer, err := priority.New(priority.Params{
+		FindingID:        f.ID,
+		RiskAssessmentID: ra.ID,
+		Rank:             80,
+		Level:            priority.LevelCritical,
+		Factors:          []explainability.Factor{{Name: "test", Value: "2", Reason: "test"}},
+		SLADeadline:      time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		PolicyName:       "baseline",
+		DecidedAt:        time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("priority.New() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, newer); err != nil {
+		t.Fatalf("save priority decision: %v", err)
+	}
+
+	list, err := repo.ListLatest(ctx)
+	if err != nil {
+		t.Fatalf("ListLatest() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ListLatest() returned %d decisions, want 1", len(list))
+	}
+	if list[0].ID != newer.ID {
+		t.Errorf("ListLatest()[0].ID = %s, want the newer decision %s", list[0].ID, newer.ID)
+	}
+}

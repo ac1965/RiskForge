@@ -51,9 +51,17 @@ Phase 3 domain models — Remediation, Verification, Evidence — are also
 implemented: `internal/domain/remediation` (RemediationPlan, §13–§14),
 `internal/domain/verification` (§16), and `internal/domain/evidence`
 (§17). Automatic-remediation policy configuration (§15's
-`auto_remediation_policy`) is deferred to the Phase 4 Policy Engine (§23);
-what exists now is the structural guarantee that a Plan can never execute
-without first being approved.
+`auto_remediation_policy`) was deferred to Phase 4.
+
+Phase 4 domain models — Exception, Policy, Audit — are also implemented:
+`internal/domain/exception` (§18, with an `exception.Policy` capping how
+long an exception may run), `internal/domain/policy`
+(`AutoRemediationPolicy` from §15, denying automatic execution by
+default), and `internal/domain/audit` (§30, an immutable who/what/when/why
+/before/after record). A generic, persisted, versioned Policy-document
+aggregate was deliberately not built — see
+[docs/adr/0007-exception-policy-audit.md](docs/adr/0007-exception-policy-audit.md)
+for why.
 
 The application layer, PostgreSQL persistence, migrations, and CLI wiring
 (currently stubs per AGENTS.md §27) are not yet implemented. See

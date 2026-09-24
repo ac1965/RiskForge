@@ -25,10 +25,13 @@ described in AGENTS.md §31 and §25A.3.
 ## Development
 
 ```bash
-make up      # start PostgreSQL via Docker Compose
-make build   # build all three binaries into ./bin
-make test    # go test ./...
-make vet     # go vet ./...
+make up               # start PostgreSQL via Docker Compose
+make build             # build all three binaries into ./bin
+make test              # go test ./... (no Docker required)
+make test-integration  # go test -tags=integration ./... (starts a real Postgres via testcontainers-go)
+make vet               # go vet ./...
+make migrate-up        # apply migrations to $RISKFORGE_DATABASE_URL
+make migrate-down      # roll back one migration
 ```
 
 Database schema migrations live under [migrations/](migrations/) and are
@@ -70,11 +73,25 @@ The Application layer's Named APIs (AGENTS.md §26) are also implemented in
 `ExecuteRemediation`, `VerifyRemediation`, `RecordEvidence`, and the
 Exception workflow (`RequestException`, `ApproveException`,
 `RejectException`, `ExpireException`, `RevokeException`). These depend
-only on repository port interfaces (`ports.go`) and the Phase 2 engines —
-no database yet. See
+only on repository port interfaces (`ports.go`) and the Phase 2 engines,
+now backed by the PostgreSQL implementation below. See
 [docs/adr/0008-application-layer.md](docs/adr/0008-application-layer.md)
 for the ports design and which operations are audited.
 
-PostgreSQL persistence, migrations, and CLI wiring (currently stubs per
-AGENTS.md §27) are not yet implemented. See [docs/adr/](docs/adr/) for
-recorded design decisions.
+PostgreSQL persistence and migrations are also implemented:
+`internal/infrastructure/postgres` provides every repository from
+`internal/application/ports.go` (with compile-time
+`var _ application.XRepository = (*XRepository)(nil)` checks in
+`interfaces.go`) plus `Migrate(db)` to apply the embedded SQL migrations
+under `/migrations`. See
+[docs/adr/0009-postgres-persistence.md](docs/adr/0009-postgres-persistence.md)
+for the schema and persistence design (JSONB vs. native arrays, the
+`findings`↔`evidence` circular foreign key, append-only vs. upsert
+tables, why there's no separate `remediation_actions` table).
+
+Repository behavior is verified against a real PostgreSQL container via
+testcontainers-go (AGENTS.md §25A.6): `make test` never touches Docker,
+`make test-integration` does.
+
+CLI wiring (currently stubs per AGENTS.md §27) is not yet implemented.
+See [docs/adr/](docs/adr/) for recorded design decisions.

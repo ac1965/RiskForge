@@ -1,125 +1,126 @@
 # RiskForge
 
-Vulnerability & Exposure Management Platform.
+Vulnerability & Exposure Management Platform（脆弱性・エクスポージャー管理プラットフォーム）。
 
-Manages the full lifecycle — Asset → Software → Vulnerability → Risk →
-Prioritization → Remediation → Verification → Evidence — rather than acting
-as a plain vulnerability scanner. See [AGENTS.md](AGENTS.md) for the full
-domain model, architecture, and development constraints; this README only
-covers day-to-day commands.
+単なる脆弱性スキャナではなく、Asset → Software → Vulnerability → Risk →
+Prioritization → Remediation → Verification → Evidence という一連のライフ
+サイクル全体を管理する。ドメインモデル・アーキテクチャ・開発上の制約の全体像は
+[AGENTS.md](AGENTS.md) を参照。本READMEは日常的なコマンドのみを扱う。
 
-## Related projects
+設計・ビルド・利用を図表つきでまとめた手引書は
+[docs/handbook.md](docs/handbook.md) を参照。
 
-[PownForge](https://github.com/ac1965/PownForge) is a sister project — an
-offensive-side CLI for discovery/verification scans against authorized lab
-targets, in a separate repository (Python/Typer). RiskForge is the
-defensive-side counterpart: it treats PownForge as an external Scanner
-(RawFinding → Normalizer → Matcher → Finding), never executes Remediation
-from PownForge, and may invoke a PownForge rescan as one Verification
-method (`scanner_rescan`). This integration is **not yet implemented on
-either side** (planned as RiskForge Phase 5 — Integrations). The full
-design constraints are the source of truth in
-[AGENTS.md §20A "PownForge Integration"](AGENTS.md#20a-pownforge-integration);
-do not build integration code ahead of that phase without an explicit
-request.
+## 関連プロジェクト
 
-## Stack
+[PownForge](https://github.com/ac1965/PownForge) は姉妹プロジェクトであり、
+許可を得た検証用ラボ環境に対する発見/検証スキャンを行う攻撃側CLI（別リポジト
+リ、Python/Typer製）である。RiskForgeは防御側の対となる存在であり、PownForge
+を外部Scannerとして扱い（RawFinding → Normalizer → Matcher → Finding）、
+PownForgeからRemediationを実行することは決してなく、Verificationの一手法
+（`scanner_rescan`）としてPownForgeの再スキャンを呼び出すことがある。この連携
+は**両側ともまだ未実装**であり（RiskForge Phase 5 「Integrations」として計画）、
+設計制約の正本は
+[AGENTS.md §20A "PownForge Integration"](AGENTS.md#20a-pownforge-integration)
+にある。明示的な依頼なしに、このフェーズより先んじて連携コードを実装しては
+ならない。
 
-Go 1.24+, PostgreSQL, golang-migrate, Cobra CLI, `net/http`. See
-[AGENTS.md §25A](AGENTS.md#25a-technology-stack).
+## 技術スタック
 
-## Binaries
+Go 1.24+、PostgreSQL、golang-migrate、Cobra CLI、`net/http`。
+[AGENTS.md §25A](AGENTS.md#25a-technology-stack) を参照。
 
-- `riskforge` — CLI / API server
-- `riskforge-agent` — runs on managed assets (Scanner privileges)
-- `riskforge-worker` — background jobs (Remediation execution privileges)
+## バイナリ
 
-Binaries are kept separate to physically enforce the permission separation
-described in AGENTS.md §31 and §25A.3.
+- `riskforge` — CLI / APIサーバー
+- `riskforge-agent` — 管理対象Asset上で稼働（Scanner権限）
+- `riskforge-worker` — バックグラウンドジョブ（Remediation実行権限）
 
-## Development
+AGENTS.md §31・§25A.3で述べた権限分離を物理的に実現するため、バイナリは
+分離して保持する。
+
+## 開発
 
 ```bash
-make up               # start PostgreSQL via Docker Compose
-make build             # build all three binaries into ./bin
-make test              # go test ./... (no Docker required)
-make test-integration  # go test -tags=integration ./... (starts a real Postgres via testcontainers-go)
+make up               # Docker ComposeでPostgreSQLを起動
+make build             # 3つのバイナリすべてを ./bin にビルド
+make test              # go test ./...（Dockerは不要）
+make test-integration  # go test -tags=integration ./...（testcontainers-goで実際のPostgresを起動）
 make vet               # go vet ./...
-make migrate-up        # apply migrations to $RISKFORGE_DATABASE_URL
-make migrate-down      # roll back one migration
+make migrate-up        # $RISKFORGE_DATABASE_URL にマイグレーションを適用
+make migrate-down      # マイグレーションを1つロールバック
 ```
 
-Database schema migrations live under [migrations/](migrations/) and are
-managed with golang-migrate — see [migrations/README.md](migrations/README.md).
+データベーススキーマのマイグレーションは [migrations/](migrations/) 配下にあり、
+golang-migrateで管理する。詳細は
+[migrations/README.md](migrations/README.md) を参照。
 
-## Status
+## ステータス
 
-Phase 1 (AGENTS.md §45) domain models — Asset, Software, Vulnerability,
-Finding — are implemented under `internal/domain/`, with unit tests
-covering validation and the Finding status lifecycle.
+Phase 1（AGENTS.md §45）のドメインモデル — Asset、Software、Vulnerability、
+Finding — は `internal/domain/` 配下に実装済みであり、バリデーションと
+Findingステータスのライフサイクルをカバーする単体テストが存在する。
 
-Phase 2 domain models — Risk and Priority — are also implemented:
-`internal/domain/risk` (the Risk Engine, §8) and `internal/domain/priority`
-(the Priority Engine, §12) each compose pluggable providers and a Policy,
-producing an explainable Assessment/Decision (§40) without hardcoding the
-scoring formula. The Dashboard part of Phase 2 (§41, frontend) is not
-started (§25A.7: frontend work begins after backend/CLI/API).
+Phase 2のドメインモデル — RiskとPriority — も実装済み。`internal/domain/risk`
+（Risk Engine、§8）と `internal/domain/priority`（Priority Engine、§12）は
+それぞれ差し替え可能なProviderとPolicyを組み合わせ、スコアリング式をハード
+コードすることなく、説明可能なAssessment/Decision（§40）を生成する。Phase 2の
+Dashboard部分（§41、フロントエンド）は未着手（§25A.7: フロントエンド作業は
+バックエンド/CLI/APIの後に開始する）。
 
-Phase 3 domain models — Remediation, Verification, Evidence — are also
-implemented: `internal/domain/remediation` (RemediationPlan, §13–§14),
-`internal/domain/verification` (§16), and `internal/domain/evidence`
-(§17). Automatic-remediation policy configuration (§15's
-`auto_remediation_policy`) was deferred to Phase 4.
+Phase 3のドメインモデル — Remediation、Verification、Evidence — も実装済み。
+`internal/domain/remediation`（RemediationPlan、§13–§14）、
+`internal/domain/verification`（§16）、`internal/domain/evidence`（§17）。
+自動修復ポリシーの設定（§15の `auto_remediation_policy`）はPhase 4へ先送りした。
 
-Phase 4 domain models — Exception, Policy, Audit — are also implemented:
-`internal/domain/exception` (§18, with an `exception.Policy` capping how
-long an exception may run), `internal/domain/policy`
-(`AutoRemediationPolicy` from §15, denying automatic execution by
-default), and `internal/domain/audit` (§30, an immutable who/what/when/why
-/before/after record). A generic, persisted, versioned Policy-document
-aggregate was deliberately not built — see
+Phase 4のドメインモデル — Exception、Policy、Audit — も実装済み。
+`internal/domain/exception`（§18、例外の実行可能期間の上限を課す
+`exception.Policy` を含む）、`internal/domain/policy`（§15の
+`AutoRemediationPolicy`、デフォルトで自動実行を拒否）、
+`internal/domain/audit`（§30、who/what/when/why/before/afterを記録する
+不変レコード）。汎用的で永続化・バージョン管理されたPolicyドキュメント集約は
+意図的に作らなかった — その理由は
 [docs/adr/0007-exception-policy-audit.md](docs/adr/0007-exception-policy-audit.md)
-for why.
+を参照。
 
-The Application layer's Named APIs (AGENTS.md §26) are also implemented in
-`internal/application`: `DiscoverAssets`, `InventoryAsset`,
-`CorrelateFindings`, `AssessRisk`, `CalculatePriority`,
-`CreateRemediationPlan`/`ApproveRemediationPlan`/`PreviewRemediation`/
-`ExecuteRemediation`, `VerifyRemediation`, `RecordEvidence`, and the
-Exception workflow (`RequestException`, `ApproveException`,
-`RejectException`, `ExpireException`, `RevokeException`). These depend
-only on repository port interfaces (`ports.go`) and the Phase 2 engines,
-now backed by the PostgreSQL implementation below. See
+Application層のNamed API（AGENTS.md §26）も `internal/application` に実装
+済み: `DiscoverAssets`、`InventoryAsset`、`CorrelateFindings`、`AssessRisk`、
+`CalculatePriority`、`CreateRemediationPlan`/`ApproveRemediationPlan`/
+`PreviewRemediation`/`ExecuteRemediation`、`VerifyRemediation`、
+`RecordEvidence`、および Exceptionワークフロー（`RequestException`、
+`ApproveException`、`RejectException`、`ExpireException`、
+`RevokeException`）。これらはリポジトリのport interface（`ports.go`）と
+Phase 2のエンジンにのみ依存しており、現在は下記のPostgreSQL実装により裏付け
+られている。portsの設計とどの操作が監査対象かについては
 [docs/adr/0008-application-layer.md](docs/adr/0008-application-layer.md)
-for the ports design and which operations are audited.
+を参照。
 
-PostgreSQL persistence and migrations are also implemented:
-`internal/infrastructure/postgres` provides every repository from
-`internal/application/ports.go` (with compile-time
-`var _ application.XRepository = (*XRepository)(nil)` checks in
-`interfaces.go`) plus `Migrate(db)` to apply the embedded SQL migrations
-under `/migrations`. See
+PostgreSQL永続化とマイグレーションも実装済み: `internal/infrastructure/postgres`
+は `internal/application/ports.go` のすべてのリポジトリを提供し
+（`interfaces.go` にコンパイル時の
+`var _ application.XRepository = (*XRepository)(nil)` チェックあり）、
+`/migrations` 配下に埋め込んだSQLマイグレーションを適用する `Migrate(db)`
+も提供する。スキーマと永続化の設計（JSONB vs. ネイティブ配列、
+`findings`↔`evidence` の循環外部キー、追記専用 vs. upsertするテーブル、
+独立した `remediation_actions` テーブルが存在しない理由）については
 [docs/adr/0009-postgres-persistence.md](docs/adr/0009-postgres-persistence.md)
-for the schema and persistence design (JSONB vs. native arrays, the
-`findings`↔`evidence` circular foreign key, append-only vs. upsert
-tables, why there's no separate `remediation_actions` table).
+を参照。
 
-Repository behavior is verified against a real PostgreSQL container via
-testcontainers-go (AGENTS.md §25A.6): `make test` never touches Docker,
-`make test-integration` does.
+リポジトリの挙動はtestcontainers-goを介した実際のPostgreSQLコンテナに対して
+検証している（AGENTS.md §25A.6）: `make test` はDockerに一切触れず、
+`make test-integration` は触れる。
 
-CLI wiring is also implemented: `cmd/riskforge/main.go` is the
-composition root (connects PostgreSQL, builds the Risk/Priority engines,
-wires an `application.Service`), and `internal/cli` depends only on
-`internal/application`, never on `internal/infrastructure` directly. The
-command tree covers everything in AGENTS.md §27 plus a few commands
-needed to make the system usable end-to-end (`asset discover`,
-`vulnerability add`, `finding correlate`, `remediation
-approve`/`preview`/`execute`, the `exception` workflow, `evidence
-record`, `priority calculate`, `migrate`) — see
-[docs/adr/0010-cli-wiring.md](docs/adr/0010-cli-wiring.md) for why each
-was added. Verified end-to-end against a real PostgreSQL instance: asset
-→ vulnerability → finding → risk → priority → remediation (propose →
-approve → execute) → evidence → verify, and separately the exception
-request → approve → expire lifecycle, each driving the expected Finding
-status transition.
+CLIの配線も実装済み: `cmd/riskforge/main.go` がcomposition rootであり
+（PostgreSQLへ接続し、Risk/Priority Engineを構築し、`application.Service`
+を組み立てる）、`internal/cli` は `internal/application` にのみ依存し、
+`internal/infrastructure` を直接参照することはない。コマンド体系は
+AGENTS.md §27に加え、システムをエンドツーエンドで使用可能にするために
+必要ないくつかのコマンド（`asset discover`、`vulnerability add`、
+`finding correlate`、`remediation approve`/`preview`/`execute`、
+`exception` ワークフロー、`evidence record`、`priority calculate`、
+`migrate`）をカバーする — それぞれを追加した理由については
+[docs/adr/0010-cli-wiring.md](docs/adr/0010-cli-wiring.md) を参照。
+実際のPostgreSQLインスタンスに対してエンドツーエンドで検証済み: asset →
+vulnerability → finding → risk → priority → remediation（propose →
+approve → execute） → evidence → verify、および別途、exceptionの
+request → approve → expire のライフサイクル。それぞれが期待通りの
+Findingステータス遷移を駆動することを確認している。

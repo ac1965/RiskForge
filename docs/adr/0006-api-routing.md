@@ -1,30 +1,31 @@
-# 0006. API routing
+# 0006. APIルーティング
 
-## Status
+## 状態
 
 Accepted
 
-## Context
+## 背景
 
-The API layer (AGENTS.md §28) needs an HTTP routing approach. Third-party
-routers (chi, gorilla/mux, gin, etc.) add a dependency and a
-router-specific handler signature across the whole API surface for a
-problem the standard library now covers.
+API層（AGENTS.md §28）にはHTTPルーティングの方式が必要である。サード
+パーティ製のルーター（chi、gorilla/mux、gin等）は、依存関係を1つ増やす
+だけでなく、標準ライブラリで既に解決できる問題に対して、API全体に
+ルーター固有のハンドラーシグネチャを持ち込むことになる。
 
-## Decision
+## 決定
 
-Use the standard library's `net/http` with `http.ServeMux` for API routing.
-Handlers are implemented as plain `http.Handler`; middleware (auth,
-request logging, request ID) is implemented as `http.Handler` wrappers,
-not as router-specific middleware.
+APIルーティングには標準ライブラリの `net/http` と `http.ServeMux` を
+用いる。ハンドラーは素の `http.Handler` として実装し、ミドルウェア
+（認証、リクエストロギング、リクエストID）もルーター固有のミドルウェア
+ではなく `http.Handler` のラッパーとして実装する。
 
-No routing library (chi, gorilla/mux, gin, echo, ...) is introduced without
-a new ADR superseding this one (AGENTS.md §25A.8).
+このADRを置き換える新しいADRなしに、ルーティングライブラリ（chi、
+gorilla/mux、gin、echo、...）を導入しない（AGENTS.md §25A.8）。
 
-## Consequences
+## 影響
 
-- Middleware and handlers stay portable if the routing library decision is
-  revisited later — an ADR-gated change, not a casual dependency bump
-  (AGENTS.md §48).
-- Route pattern matching is limited to what `http.ServeMux` supports
-  (method + path pattern matching, available since Go 1.22).
+- ルーティングライブラリの決定を後で見直すことになっても、ミドルウェア
+  とハンドラーは移植可能なままである — これは何気ない依存関係の追加
+  ではなく、ADRを経た変更として扱う（AGENTS.md §48）。
+- ルートパターンのマッチングは `http.ServeMux` がサポートする範囲
+  （メソッド + パスパターンマッチング、Go 1.22以降で利用可能）に
+  限定される。

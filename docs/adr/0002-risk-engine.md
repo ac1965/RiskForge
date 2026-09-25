@@ -1,68 +1,71 @@
-# 0002. Risk and Priority Engine design
+# 0002. RiskおよびPriority Engineの設計
 
-## Status
+## 状態
 
 Accepted
 
-## Context
+## 背景
 
-AGENTS.md §8 and §12 require Risk and Priority to be computed by
-independent, composable engines rather than a fixed formula (e.g. a
-mechanical CVSS-weighted multiplication), and forbid treating Risk and
-Priority as the same thing (§44 Invariants 2 and 5). At the same time,
-§23 describes a full, configuration-driven Policy Engine — but that is
-explicitly Phase 4 work (§45), not Phase 2. Phase 2 needs a design that:
+AGENTS.md §8と§12は、Risk・Priorityを固定の計算式（例えばCVSSに重みを
+掛け合わせるだけの機械的な乗算）ではなく、独立した組み合わせ可能な
+Engineによって計算することを求めており、RiskとPriorityを同一視することを
+禁じている（§44 不変条件2・5）。一方で§23は、設定駆動の完全なPolicy
+Engineについて述べているが、これは明示的にPhase 4の作業であり
+（§45）、Phase 2の対象ではない。Phase 2で必要なのは、以下を満たす設計
+である:
 
-- lets Risk and Priority scoring be swapped out later without changing
-  callers, and
-- doesn't build the Phase 4 Policy Engine (config loading, persistence,
-  approval workflow) ahead of schedule (§47.11).
+- RiskとPriorityのスコアリングを、呼び出し側を変更することなく後から
+  差し替えられること
+- Phase 4のPolicy Engine（設定の読み込み、永続化、承認ワークフロー）を
+  前倒しで作り込まないこと（§47.11）
 
-## Decision
+## 決定
 
-Implement `internal/domain/risk` and `internal/domain/priority` as a pair
-of parallel Engine/Policy/Provider structures:
+`internal/domain/risk` と `internal/domain/priority` を、
+Engine/Policy/Providerという対になった構造として実装する:
 
-- **Providers** (`SeverityProvider`, `ExploitabilityProvider`,
-  `AssetCriticalityProvider`, `ExposureProvider`, `BusinessImpactProvider`
-  for Risk; `RemediationAvailabilityProvider`, `BusinessConstraintsProvider`
-  for Priority, plus reuse of Risk's Exploitability/AssetCriticality/
-  Exposure providers) are interfaces gathering one input each. Concrete
-  implementations that call out to a CMDB, KEV feed, or EPSS API are an
-  infrastructure concern for a later phase; for now, default
-  implementations (`FromVulnerabilityProvider`, `FromAssetProvider`, ...)
-  simply read from the already-loaded Asset/Vulnerability/Finding
-  aggregates.
-- **Policy** (`risk.Policy`, `priority.Policy`) is the single seam where
-  scoring logic lives: `Evaluate(...)` takes the gathered provider outputs
-  and returns a `Result` (score/rank, level, and `explainability.Factor`s).
-  `Engine.Assess` / `Engine.Decide` never compute a score themselves — they
-  only gather inputs and call Policy.
-- `risk.BaselinePolicy` and `priority.BaselinePolicy` are one reference
-  implementation of Policy each, not "the" risk/priority formula. They
-  exist so the Engines are usable and testable now; a config-driven Policy
-  Engine (§23) can later be introduced as another `Policy` implementation
-  without touching `Engine`.
-- `risk.Assessment` and `priority.Decision` are separate entities.
-  `priority.Engine` takes a `*risk.Assessment` as one of several Policy
-  inputs but computes its own independent Rank/Level — it is not a
-  read-through of Risk's Level (§44 Invariant 2).
-- Every `Policy.Evaluate` result must include at least one
-  `explainability.Factor` (§40); `risk.New` / `priority.New` reject an
-  Assessment/Decision with zero factors, so an unexplained score cannot be
-  persisted.
-- `risk.Exploitability` is a value object separate from
-  `vulnerability.Vulnerability`'s own exploit fields: it represents
-  time-varying threat intel (KEV listing, exploit prediction) gathered
-  fresh per assessment, not the vulnerability's static description (§9).
+- **Provider**（Risk向けの `SeverityProvider`、`ExploitabilityProvider`、
+  `AssetCriticalityProvider`、`ExposureProvider`、
+  `BusinessImpactProvider`。Priority向けの
+  `RemediationAvailabilityProvider`、`BusinessConstraintsProvider`、
+  加えてRiskのExploitability/AssetCriticality/Exposure Providerの再利用）
+  は、それぞれ1つの入力を集めるinterfaceである。CMDB、KEVフィード、
+  EPSS APIを呼び出す具体的な実装は後続フェーズのInfrastructureの関心事で
+  あり、現時点ではデフォルト実装（`FromVulnerabilityProvider`、
+  `FromAssetProvider`、...）が既にロード済みのAsset/Vulnerability/
+  Finding集約から単純に読み取るだけにとどめる。
+- **Policy**（`risk.Policy`、`priority.Policy`）は、スコアリングロジック
+  が存在する唯一の継ぎ目である: `Evaluate(...)` はProviderが集めた出力を
+  受け取り、`Result`（スコア/ランク、レベル、`explainability.Factor` 群）
+  を返す。`Engine.Assess` / `Engine.Decide` 自身はスコアを計算せず、
+  入力を集めてPolicyを呼び出すだけである。
+- `risk.BaselinePolicy` と `priority.BaselinePolicy` は、それぞれ
+  Policyのリファレンス実装の1つであり、「唯一の」risk/priority計算式
+  ではない。これらはEngineを今すぐ使用・テスト可能にするために存在して
+  おり、設定駆動のPolicy Engine（§23）は、`Engine` に手を加えることなく、
+  後から別の `Policy` 実装として導入できる。
+- `risk.Assessment` と `priority.Decision` は別々のエンティティである。
+  `priority.Engine` は複数あるPolicy入力の1つとして `*risk.Assessment`
+  を受け取るが、独自のRank/Levelを計算する — RiskのLevelをそのまま読む
+  わけではない（§44 不変条件2）。
+- すべての `Policy.Evaluate` の結果は、少なくとも1つの
+  `explainability.Factor`（§40）を含まなければならない。`risk.New` /
+  `priority.New` はFactorが0件のAssessment/Decisionを拒否するため、
+  説明のつかないスコアが永続化されることはない。
+- `risk.Exploitability` は、`vulnerability.Vulnerability` 自体が持つ
+  exploit関連フィールドとは別の値オブジェクトである。これはAssessment
+  ごとに新たに収集される、時間とともに変化する脅威インテリジェンス
+  （KEV掲載、exploit予測）を表しており、脆弱性の静的な記述（§9）では
+  ない。
 
-## Consequences
+## 影響
 
-- Adding a real Policy (e.g. loaded from YAML/DB config in Phase 4) means
-  writing a new type that implements `Policy`, not modifying `Engine`.
-- Swapping in a live KEV/EPSS-backed `ExploitabilityProvider` or a
-  CMDB-backed `BusinessImpactProvider` later is an infrastructure change,
-  isolated from the Risk/Priority domain logic.
-- `risk.BaselinePolicy` and `priority.BaselinePolicy`'s specific weights
-  are illustrative defaults, not organizational policy; they should not be
-  relied on for production risk decisions without review.
+- 実際のPolicy（例: Phase 4でYAML/DB設定から読み込むもの）を追加する
+  際は、`Engine` を変更するのではなく、`Policy` を実装する新しい型を
+  書くことになる。
+- 実際に稼働するKEV/EPSS連携の `ExploitabilityProvider` や、CMDB連携の
+  `BusinessImpactProvider` を後から差し込むのはInfrastructure側の変更
+  であり、Risk/Priorityのドメインロジックからは切り離されている。
+- `risk.BaselinePolicy` と `priority.BaselinePolicy` の具体的な重み付け
+  は例示的なデフォルト値であり、組織のポリシーそのものではない。
+  レビューなしにproductionのリスク判断の根拠として用いるべきではない。

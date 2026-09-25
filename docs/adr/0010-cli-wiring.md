@@ -1,100 +1,106 @@
-# 0010. CLI wiring
+# 0010. CLIの配線
 
-## Status
+## 状態
 
 Accepted
 
-## Context
+## 背景
 
-`internal/cli` (from the initial scaffolding) already had the command
-tree AGENTS.md §27 shows, but every `RunE` returned "not implemented
-yet". Wiring it to real persistence raised the same kind of question ADRs
-0008 and 0009 already answered for Application and Infrastructure: §27's
-list is a starting structure ("CLIは以下のような構造を基本とする"), not
-necessarily exhaustive, and several of its commands have no way to
-produce data for `list`/`show` to display, or no way to reach the
-approval/execution/exception operations built in earlier phases.
+`internal/cli`（初期スキャフォールディングの時点から）は既にAGENTS.md
+§27が示すコマンド体系を持っていたが、すべての `RunE` は「not
+implemented yet」を返していた。これを実際の永続化に配線すると、
+ADR 0008とADR 0009がApplicationとInfrastructureについて既に答えたのと
+同種の疑問が生じた: §27のリストは出発点となる構造（「CLIは以下のよう
+な構造を基本とする」）であって、必ずしも網羅的ではなく、そのいくつかの
+コマンドは `list`/`show` が表示するためのデータを生成する手段を持たず、
+あるいは前フェーズで構築した承認/実行/exception操作に到達する手段を
+持っていなかった。
 
-## Decision
+## 決定
 
-- **Composition root**: `cmd/riskforge/main.go`, not `internal/cli`,
-  imports `internal/infrastructure/postgres` and constructs the
-  `risk.Engine`/`priority.Engine`. It passes `internal/cli.NewRootCommand`
-  a `ServiceFactory` (`func() (*application.Service, func() error,
-  error)`) and a `migrate func() error`. `internal/cli` itself only
-  imports `internal/application` and `internal/domain` value types (for
-  building `Params` structs and reading enum constants from flags) —
-  never `internal/infrastructure` — keeping the layering rule (AGENTS.md
-  §25) intact even though the binary as a whole obviously needs
-  PostgreSQL.
-- **The factory is lazy**: each command calls `newService()` inside its
-  own `RunE`, not at `NewRootCommand` construction time. This is why
-  `riskforge --help` and `riskforge --version` work without
-  `$RISKFORGE_DATABASE_URL` being set at all, while every real command
-  fails immediately and clearly if it isn't.
-- **Application ports gained `List`/`ListLatest` methods**
-  (`AssetRepository.List`, `FindingRepository.List`,
-  `RemediationPlanRepository.List`, `ExceptionRepository.List`,
-  `PriorityDecisionRepository.ListLatest`) that didn't exist before this
-  phase — nothing needed them until the CLI's `list` commands did. Each
-  is implemented in `internal/infrastructure/postgres` and covered by
-  its own integration test; `PriorityDecisionRepository.ListLatest` uses
+- **Composition root**: `internal/cli` ではなく `cmd/riskforge/main.go`
+  が `internal/infrastructure/postgres` をimportし、
+  `risk.Engine`/`priority.Engine` を構築する。これは
+  `internal/cli.NewRootCommand` に `ServiceFactory`
+  （`func() (*application.Service, func() error, error)`）と
+  `migrate func() error` を渡す。`internal/cli` 自身は
+  `internal/application` と（フラグから `Params` 構造体を組み立て、
+  enum定数を読み取るための）`internal/domain` の値型のみをimportし、
+  `internal/infrastructure` を一切importしない — バイナリ全体として
+  は明らかにPostgreSQLを必要とするにもかかわらず、レイヤリングルール
+  （AGENTS.md §25）を保っている。
+- **factoryは遅延評価される**: 各コマンドは `NewRootCommand` の構築
+  時点ではなく、自身の `RunE` の中で `newService()` を呼び出す。
+  これにより `$RISKFORGE_DATABASE_URL` が一切設定されていなくても
+  `riskforge --help` や `riskforge --version` は動作し、一方で実際の
+  コマンドは設定されていない場合には即座に、かつ明確に失敗する。
+- **Application portsに `List`/`ListLatest` メソッドを追加した**
+  （`AssetRepository.List`、`FindingRepository.List`、
+  `RemediationPlanRepository.List`、`ExceptionRepository.List`、
+  `PriorityDecisionRepository.ListLatest`）。これらはこのフェーズ
+  以前には存在しておらず、CLIの `list` コマンドが必要とするまで誰も
+  必要としていなかった。それぞれ `internal/infrastructure/postgres`
+  に実装され、専用のintegration testでカバーされている。
+  `PriorityDecisionRepository.ListLatest` は
   `SELECT DISTINCT ON (finding_id) ... ORDER BY finding_id, decided_at
-  DESC` to get the newest decision per Finding, verified against a
-  fixture with two decisions for the same Finding at different ranks.
-- **Commands beyond §27's literal list** were added because the ones
-  already there don't compose into a usable system on their own:
-  - `asset discover`, `vulnerability add`, `finding correlate`: nothing
-    else can create an Asset, Vulnerability, or Finding via the CLI.
-    `vulnerability add` is explicitly a manual stand-in — real ingestion
-    is the NVD/KEV/OSV Data Source Adapters (§19), which are Phase 5.
-  - `remediation approve`, `remediation preview`, `remediation execute`:
-    `remediation propose` alone can never move past `StatusProposed`
-    (ADR 0003's approval gate).
-  - `exception request`/`approve`/`reject`/`expire`/`revoke`: §27 shows
-    only `exception list`; Exception (§18, Phase 4) otherwise has no CLI
-    entry point at all.
-  - `priority calculate`: paired with `risk assess` as the write half of
-    the Risk → Priority pipeline, so `priority list` can stay a pure
-    read instead of quietly computing decisions as a side effect of
-    listing them.
-  - `evidence record`: `verify` and `exception request` both need an
-    Evidence id to reference.
-  - `migrate`: makes the `riskforge` binary self-sufficient for schema
-    setup, reusing `postgres.Migrate` (ADR 0009) instead of requiring the
-    external `migrate` CLI.
-- **`remediation execute` uses a placeholder `manualExecutor`**
-  (`internal/cli/remediation.go`) that always reports success. The
-  validated/structured/allowlisted command execution AGENTS.md §31/§32
-  actually require doesn't exist yet (see ADR 0008's `RemediationExecutor`
-  port); this assumes the operator already made the change by hand and
-  the CLI is just recording that fact, which is honest about what a v1
-  CLI without real execution infrastructure can promise.
-- **Batch commands (`risk assess`, `priority calculate`) continue past a
-  single item's failure**, printing `finding <id>: error: ...` per
-  failure and returning a non-zero exit only after processing every
-  target — so one bad Finding doesn't block assessing the rest.
-- **`RISKFORGE_DATABASE_URL`** is the one piece of configuration the CLI
-  reads (matching the Makefile's `migrate-up`/`migrate-down` targets,
-  which already used this name).
+  DESC` を用いてFindingごとの最新の決定を取得し、同一Findingに対して
+  異なるランクを持つ2つの決定を含むfixtureに対して検証している。
+- **§27の文字通りのリストを超えるコマンド**を追加した。既存のもの
+  だけでは実用可能なシステムとして組み合わせられないためである:
+  - `asset discover`、`vulnerability add`、`finding correlate`:
+    CLI経由でAsset、Vulnerability、Findingを作成できる他の手段が
+    ない。`vulnerability add` は明示的に手動の代替手段であり、実際の
+    取り込みはNVD/KEV/OSVのData Source Adapter（§19）— これはPhase 5
+    である。
+  - `remediation approve`、`remediation preview`、
+    `remediation execute`: `remediation propose` だけでは
+    `StatusProposed` を超えて進めない（ADR 0003の承認ゲート）。
+  - `exception request`/`approve`/`reject`/`expire`/`revoke`:
+    §27には `exception list` しか示されておらず、Exception（§18、
+    Phase 4）にはそれ以外CLIのエントリーポイントが一切ない。
+  - `priority calculate`: `risk assess` と対になる、Risk → Priority
+    パイプラインの書き込み側であり、これにより `priority list` は
+    決定を一覧表示する副作用としてこっそり計算するのではなく、
+    純粋な読み取りのままでいられる。
+  - `evidence record`: `verify` と `exception request` の両方が、
+    参照するためのEvidence idを必要とする。
+  - `migrate`: 外部の `migrate` CLIを必要とせず、`postgres.Migrate`
+    （ADR 0009）を再利用することで、`riskforge` バイナリをスキーマ
+    セットアップについて自己完結させる。
+- **`remediation execute` はプレースホルダーの `manualExecutor`**
+  （`internal/cli/remediation.go`）を用い、常に成功を報告する。
+  AGENTS.md §31/§32が実際に要求するvalidated/structured/allowlisted
+  なコマンド実行はまだ存在しない（ADR 0008の `RemediationExecutor`
+  portを参照）。これはオペレーターが既に手動で変更を加えており、CLIは
+  その事実を記録しているに過ぎないという前提であり、実際の実行
+  インフラを持たないv1のCLIが約束できることについて正直な設計である。
+- **バッチコマンド（`risk assess`、`priority calculate`）は、1件の
+  失敗の後も処理を継続する**。失敗ごとに `finding <id>: error: ...`
+  を出力し、すべての対象を処理し終えてから非ゼロの終了コードを返す。
+  これにより1件の不良なFindingが残りの評価をブロックすることはない。
+- **`RISKFORGE_DATABASE_URL`** は、CLIが読み取る唯一の設定項目である
+  （既にこの名前を使っているMakefileの `migrate-up`/`migrate-down`
+  ターゲットと整合する）。
 
-## Consequences
+## 影響
 
-- `cmd/riskforge/main.go` is the only place that would need to change to
-  point the CLI at a different Provider set (e.g. a real CMDB-backed
-  `BusinessImpactProvider` once one exists) or a different persistence
-  backend — `internal/cli` itself has no idea PostgreSQL exists.
-- Verified end-to-end against a real PostgreSQL instance (`docker compose
-  up` + the built binary), not just unit-level: asset discover → asset
-  list/inspect → vulnerability add → finding correlate → finding
-  list/show → risk assess → priority calculate/list → remediation
-  propose → (execute correctly refused before approve) → approve →
-  preview → execute → finding reaches `remediated` → evidence record →
-  verify → finding reaches `verified`; separately, exception request
-  (rejected once for exceeding an org duration cap, accepted once within
-  it) → approve → finding reaches `accepted` → expire → finding reaches
-  `reopened`.
-- `root.SilenceErrors` is `true` because `cmd/riskforge/main.go` already
-  prints whatever error `Execute()` returns; leaving cobra's own default
-  `false` printed every command error twice, which the end-to-end pass
-  above caught immediately.
+- `cmd/riskforge/main.go` は、CLIを別のProviderセット（例えば実際の
+  CMDB連携の `BusinessImpactProvider` が実装された場合）や別の永続化
+  バックエンドに向けるために変更が必要な唯一の場所である —
+  `internal/cli` 自体はPostgreSQLの存在を一切知らない。
+- 単体レベルだけでなく、実際のPostgreSQLインスタンス
+  （`docker compose up` + ビルド済みバイナリ）に対してもエンドツー
+  エンドで検証済み: asset discover → asset list/inspect →
+  vulnerability add → finding correlate → finding list/show →
+  risk assess → priority calculate/list → remediation propose →
+  （approve前のexecuteは正しく拒否される）→ approve → preview →
+  execute → Findingが `remediated` に到達 → evidence record →
+  verify → Findingが `verified` に到達。これとは別に、exception
+  request（組織の期間上限を超えたものは1回拒否、その範囲内のものは
+  1回受理）→ approve → Findingが `accepted` に到達 → expire →
+  Findingが `reopened` に到達。
+- `root.SilenceErrors` は `true` としている。`cmd/riskforge/main.go`
+  が既に `Execute()` が返すエラーを出力しているためである。cobraの
+  デフォルトである `false` のままにしておくと、すべてのコマンドエラー
+  が二重に出力されてしまい、上記のエンドツーエンド検証で即座に発覚
+  した。

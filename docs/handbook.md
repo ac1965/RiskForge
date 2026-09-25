@@ -22,6 +22,7 @@
 12. [実装状況](#12-実装状況)
 13. [ADRダイジェスト(設計判断の索引)](#13-adrダイジェスト設計判断の索引)
 14. [PownForgeとの関係(姉妹プロジェクト)](#14-pownforgeとの関係姉妹プロジェクト)
+15. [付録: 用語集](#15-付録-用語集)
 
 ---
 
@@ -796,3 +797,103 @@ flowchart TD
 コードを先行実装しない、という制約はAGENTS.md §20A.10に明記されて
 います。連携仕様の重要な判断は`docs/adr/0005-pownforge-integration.md`
 として記録される想定ですが、本書執筆時点ではまだ作成されていません。
+
+## 15. 付録: 用語集
+
+本書とAGENTS.mdで使われる用語をまとめます。定義の正本はAGENTS.mdの
+該当節であり、ここでは実装(型名・値)と対応付けて簡潔に説明します。
+
+### ライフサイクルの中核用語(AGENTS.md §3–§18)
+
+| 用語 | 説明 |
+| --- | --- |
+| Asset | IT資産そのもの。システムの中心エンティティ(`asset.Asset`、§4) |
+| Software Installation | Asset上にインストールされたソフトウェア(`software.Installation`、§5) |
+| Vulnerability | 脆弱性そのもの。CVE等の外部識別子と技術的深刻度を持つ(`vulnerability.Vulnerability`、§6)。**Findingとは別物**(不変条件1) |
+| Finding | 「特定のAssetに特定のVulnerabilityが検出された」という実環境上の事実(`finding.Finding`、§7) |
+| Risk / RiskAssessment | Findingの組織内における実リスクをRisk Engineが評価した結果(`risk.Assessment`、§8)。**CVSSやPriorityとは別物**(不変条件2・5) |
+| Priority / PriorityDecision | 「何を先に対応するか」をPriority Engineが決定した結果(`priority.Decision`、§12) |
+| Remediation / RemediationPlan | Findingを是正するための計画。パッチ適用に限らない(`remediation.Plan`、§13–§14) |
+| Verification | Remediationが実際に効いたかどうかの検証(`verification.Verification`、§16)。**Remediation完了そのものとは別物**(不変条件3) |
+| Evidence | 検出結果・設定値・実行結果などを裏付ける、改ざん検知可能な証跡(`evidence.Evidence`、§17)。**Findingとは別物**(不変条件4) |
+| Exception | 誤検知や期限付きのリスク受容を表す正式な状態(`exception.Exception`、§18) |
+| Audit(Entry) | 重要操作のwho/what/when/why/before/afterを記録する不変の監査ログ(`audit.Entry`、§30) |
+
+### Risk / Priority Engineの用語(AGENTS.md §8–§12、§40、§43)
+
+| 用語 | 説明 |
+| --- | --- |
+| Severity | Vulnerability自体の技術的深刻度(critical/high/medium/low/none/unknown)。組織リスクとは別軸(§6、§44不変条件5) |
+| Exploitability | 悪用可能性に関する脅威インテリジェンスのスナップショット。`exploit_exists`・`public_exploit`・`exploitation_observed`・`kev_listed`等を個別に保持し混同しない(`risk.Exploitability`、§9) |
+| CISA KEV | CISAが公表する「実際に悪用が確認された脆弱性」のリスト(Known Exploited Vulnerabilities)。`KEVListed`として個別に保持 |
+| Exploit Prediction | 悪用確率の予測値(EPSS等を想定した0〜1のスコア)。`Exploitability.ExploitPrediction` |
+| Asset Criticality | Assetの業務上の重要度(critical/high/medium/low/unknown)。技術情報から自動推定せず、業務側(CMDB等)から与えられる値(§11) |
+| Exposure | Assetが攻撃者からどの程度到達可能かを表す多面的な状態。単一のbooleanにしない(`asset.Exposure`、§10) |
+| Business Impact | データ分類・可用性/機密性/完全性要件などの業務影響。Asset Criticalityより詳細な業務コンテキスト(`risk.BusinessImpact`、§11) |
+| CVSS(v3/v4) | Common Vulnerability Scoring Systemの基本スコア。Vulnerabilityの技術的深刻度の一指標であり、Risk Scoreそのものではない(§6、§44不変条件5) |
+| Explainability / Factor | Risk Score・Priority Rankを「なぜその値になったか」まで説明する仕組み。1件以上のFactorなしにAssessment/Decisionは生成できない(`explainability.Factor`、§40) |
+| Provider | Severity・Exploitability・AssetCriticality等、Engineへの入力を1つずつ集めるinterface。実装は差し替え可能(§8、§12) |
+| Policy | Providerの出力からScore/Rank/Levelと説明を計算するinterface。`BaselinePolicy`はリファレンス実装の1つであり「唯一の式」ではない(§8、§12、§23) |
+| Engine | Provider群とPolicyを組み合わせ、Assessment/Decisionを生成する調整役。Engine自体はスコアを計算しない(`risk.Engine`/`priority.Engine`) |
+| SLA(Deadline) | Priority Levelごとに定める是正期限。固定値ではなく組織ポリシーとして差し替え可能(`priority.SLAPolicy`、§43) |
+
+### Remediationの用語(AGENTS.md §13–§15、§31–§34)
+
+| 用語 | 説明 |
+| --- | --- |
+| Action Type | Remediationの種別。`patch`/`upgrade`/`configuration_change`/`disable_feature`/`disable_service`/`remove_software`/`access_control`/`network_segmentation`/`virtual_patch`/`compensating_control`/`temporary_mitigation`/`accept_risk`(§13) |
+| Virtual Patch | パッチを直接適用せず、WAF等で一時的に悪用経路を遮断する対処 |
+| Compensating Control | 根本的な是正の代わりに、リスクを緩和する代替的な統制 |
+| Dry Run | Remediation実行前に、対象・変更内容・Rollback方法をプレビューする仕組み。変更を一切行わない(`Plan.DryRun`、§33) |
+| Rollback | Remediation実行後に変更を元に戻す手順。ロールバック不能な場合はその旨を`Reason`として明示する(`remediation.Rollback`、§34) |
+| Approval(承認) | RemediationPlanが`Proposed`から`InProgress`へ進む前に必ず経由する承認ゲート。自動修復をデフォルト無効にする実装上の要(§15、§47.7) |
+| Auto Remediation Policy | 自動実行を許可する条件(対象種別・環境・アクション種別・保守枠等)を定める設定。ゼロ値はすべて拒否する安全側デフォルト(`policy.AutoRemediationPolicy`、§15) |
+
+### 状態・ステータス
+
+| 用語 | 説明 |
+| --- | --- |
+| Finding Status | `open`/`mitigated`/`remediated`/`verified`/`reopened`/`accepted`/`false_positive`。遷移ルールは[第8章](#8-ライフサイクルと状態遷移)参照(§16) |
+| Confidence | 検出結果の確からしさ。`confirmed`/`high`/`medium`/`low`/`unknown`。バージョン推定だけでは`confirmed`にしない(§21) |
+| RemediationPlan Status | `proposed`/`approved`/`scheduled`/`in_progress`/`completed`/`failed`/`rolled_back`/`cancelled`(§14) |
+| Exception Status | `requested`/`approved`/`rejected`/`expired`/`revoked`(§18) |
+| Verification Result | `pass`/`fail`/`inconclusive`。`inconclusive`(検証不能)は`fail`とは区別し、Finding遷移を発生させない(§16、§20A.6.1) |
+| False Positive | 誤検知。削除せずEvidenceと理由を残し、Suppression/Exceptionで再検出時の重複生成を防ぐ(§22) |
+
+### アーキテクチャ・実装用語(AGENTS.md §25–§30、§37–§38)
+
+| 用語 | 説明 |
+| --- | --- |
+| Named API | CLI/APIがDomainへ直接立ち入らず呼び出す、Application層の公開関数群(`assess_risk()`等、§26) |
+| Port / Repository | ApplicationとInfrastructureの間の継ぎ目となるinterface。Applicationが定義しInfrastructureが実装する(`ports.go`、§25) |
+| Composition Root | PostgreSQLやEngineの実装を1箇所で組み立て、他の層へ注入するコード(`cmd/riskforge/main.go`) |
+| Layering(レイヤリング) | `UI → Application → Domain → Infrastructure`という依存方向の原則。Domainは外部依存を直接importしない(§25) |
+| Invariant(不変条件) | レイヤーや機能をまたいで常に成立しなければならない性質。[第3章](#3-ドメインモデル)の6項目(§44) |
+| ADR(Architecture Decision Record) | 重要な設計判断とその理由を記録する文書。`docs/adr/`配下に番号付きで蓄積する正本(§49、[第13章](#13-adrダイジェスト設計判断の索引)) |
+| Idempotency(冪等性) | 同じデータを繰り返し投入しても重複Findingなどを大量生成しない性質。Asset発見・Software棚卸・Finding相関等で要求される(§37) |
+| Provenance(出典) | 外部データソース(NVD/KEV/OSV等)から取り込んだ情報の出所を記録する仕組み。`source`/`source_id`/`retrieved_at`等(`vulnerability.Provenance`、§38) |
+| Policy Engine | 判断ロジックをコードに散らさず、設定として管理する仕組み。RiskForgeでは`risk.Policy`/`priority.Policy`/`AutoRemediationPolicy`等として部分的に実装済み(§23) |
+
+### 組織・ガバナンス用語(AGENTS.md §4、§11、§12)
+
+| 用語 | 説明 |
+| --- | --- |
+| Business Criticality | 業務側が定める重要度。Asset Criticalityより詳細な区分を持ちうる(§11) |
+| Data Classification | 扱うデータの機密度分類 |
+| Environment | Assetが稼働する環境。`production`/`staging`/`development`/`test`/`management`/`unknown`(§4) |
+| Lifecycle State | Assetのライフサイクル上の位置。`active`/`inactive`/`decommissioned`/`unknown`(§4) |
+| Change Freeze | 変更凍結期間。Priority計算のFactorとして記録されるが、スコアそのものは変えない |
+| Maintenance Window | 保守作業が許可される時間帯。Auto Remediation Policyの実行条件の1つ |
+| Compliance Deadline | 規制・契約上の対応期限。近づくとPriorityが加点される |
+
+### PownForge連携の用語(AGENTS.md §20A、Phase 5予定)
+
+| 用語 | 説明 |
+| --- | --- |
+| RawFinding | 外部Scanner(PownForge等)の生の診断結果。正規化前の中間表現(§20) |
+| Normalizer | RawFindingを検証・正規化する処理 |
+| Matcher | 正規化された結果を既知のVulnerability/Findingへ対応付ける処理 |
+| source / source_ref | Evidenceの出所と、出所側(PownForge)での識別子。参照とハッシュで引き継ぎ、コピーしない(§20A.4) |
+| content_hash | Evidenceの内容が改ざん・破損していないかを検証するハッシュ値 |
+| scanner_rescan | Verificationの一手法。PownForge等による再スキャンで是正結果を確認する(§20A.6) |
+| exploitation_observed | 実環境で実際に攻撃が観測されたという外部情報。PownForgeによる「この環境で成立確認した」という事実とは別項目(§9、§20A.3) |

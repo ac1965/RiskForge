@@ -8,6 +8,21 @@ as a plain vulnerability scanner. See [AGENTS.md](AGENTS.md) for the full
 domain model, architecture, and development constraints; this README only
 covers day-to-day commands.
 
+## Related projects
+
+[PownForge](https://github.com/ac1965/PownForge) is a sister project — an
+offensive-side CLI for discovery/verification scans against authorized lab
+targets, in a separate repository (Python/Typer). RiskForge is the
+defensive-side counterpart: it treats PownForge as an external Scanner
+(RawFinding → Normalizer → Matcher → Finding), never executes Remediation
+from PownForge, and may invoke a PownForge rescan as one Verification
+method (`scanner_rescan`). This integration is **not yet implemented on
+either side** (planned as RiskForge Phase 5 — Integrations). The full
+design constraints are the source of truth in
+[AGENTS.md §20A "PownForge Integration"](AGENTS.md#20a-pownforge-integration);
+do not build integration code ahead of that phase without an explicit
+request.
+
 ## Stack
 
 Go 1.24+, PostgreSQL, golang-migrate, Cobra CLI, `net/http`. See

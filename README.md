@@ -124,3 +124,21 @@ vulnerability → finding → risk → priority → remediation（propose →
 approve → execute） → evidence → verify、および別途、exceptionの
 request → approve → expire のライフサイクル。それぞれが期待通りの
 Findingステータス遷移を駆動することを確認している。
+
+HTTP API（読み取り専用5エンドポイント）実装済み: `riskforge serve`
+（デフォルト`127.0.0.1:8080`、`--addr`で上書き可）が
+`GET /api/v1/assets`・`/findings`・`/priorities`・`/remediation-plans`・
+`/exceptions`を提供する。いずれも`internal/application`の既存`List*`
+メソッドを薄くラップするだけで、正常時は対象リソースの配列を、失敗時は
+`{"error": "..."}`(500)を返す。認証・認可は本PRでは意図的に未実装
+（理由・条件は
+[docs/adr/0011-http-api-design.md](docs/adr/0011-http-api-design.md)
+「認証・認可」節を参照。Dashboard着手前に
+[docs/adr/0012-http-api-authentication.md](docs/adr/0012-http-api-authentication.md)
+が既にトークン認証方式を決定済みだが、その実装(P0-4)はまだこれから)。
+`internal/api`は`internal/application`にのみ依存し、`internal/cli`も
+`internal/api`を直接importしない(`cmd/riskforge/main.go`が
+`func(*application.Service) http.Handler`を注入する)。実際にPostgreSQLへ
+asset(criticality/exposure付き)を登録した上で`riskforge serve`を起動し、
+5エンドポイントすべてを`curl`で確認済み(空配列は`null`ではなく`[]`を
+返すことも含む)。

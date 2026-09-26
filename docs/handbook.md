@@ -712,7 +712,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | フェーズ(AGENTS.md §45) | 内容 | 状況 |
 | --- | --- | --- |
 | Phase 1 | Asset / Software / Vulnerability / Finding | 実装済み |
-| Phase 2 | Risk Engine / Priority Engine | 実装済み(Dashboard/フロントエンドは未着手、§25A.7どおりバックエンド優先) |
+| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用) | Risk/Priority Engineおよび読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)は実装済み。Dashboard/フロントエンドは未着手(§25A.7どおりバックエンド優先。認証実装(P0-4、[ADR 0012](adr/0012-http-api-authentication.md))がDashboard着手の前提) |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
 | Phase 5 | Automation / AI assistance / Integrations | 未着手。PownForge連携・NVD/KEV/OSV Data Source Adapterはここに含まれる |
@@ -751,6 +751,8 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0008](adr/0008-application-layer.md) | Application層: Named APIとports | Repository interfaceを`ports.go`に集約。§26に例示のない`ApproveRemediationPlan`とException操作群を追加。監査対象は§30が明示した8アクションのみに限定 |
 | [0009](adr/0009-postgres-persistence.md) | PostgreSQL永続化とマイグレーション | pgx+`database/sql`を採用し、配列・構造化データはJSONBに格納。`findings`⇔`evidence`の循環参照解消手順と、追記専用/upsertの使い分けを定義 |
 | [0010](adr/0010-cli-wiring.md) | CLI配線 | `cmd/riskforge/main.go`をcomposition rootとし、`internal/cli`はPostgreSQLの存在を知らない。§27に例示のないコマンド(`asset discover`等)を追加した理由と、`manualExecutor`による暫定実行を記録 |
+| [0011](adr/0011-http-api-design.md) | HTTP APIの設計 | `net/http`標準の`ServeMux`のみを使用。読み取り専用5エンドポイントに限定(P0-2)、封筒無しで配列をそのまま返す、認証・認可は意図的に本PRの対象外(理由と条件を明記)、`internal/api`は`internal/application`にのみ依存し`internal/cli`は`internal/api`をimportしない |
+| [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)はDashboard着手の前提条件として別PRで行う |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 

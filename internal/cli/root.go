@@ -15,8 +15,10 @@ var version = "dev"
 
 // NewRootCommand builds the root "riskforge" command. newService lazily
 // connects to persistence for every command except migrate, which uses
-// migrate directly.
-func NewRootCommand(newService ServiceFactory, migrate func() error) *cobra.Command {
+// migrate directly. newHandler builds the HTTP API handler for `serve`
+// (ADR 0011); cmd/riskforge/main.go supplies internal/api.NewMux so this
+// package never imports internal/api itself.
+func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler HandlerFactory) *cobra.Command {
 	root := &cobra.Command{
 		Use:          "riskforge",
 		Short:        "Vulnerability & Exposure Management Platform",
@@ -38,6 +40,7 @@ func NewRootCommand(newService ServiceFactory, migrate func() error) *cobra.Comm
 		newVerifyCommand(newService),
 		newEvidenceCommand(newService),
 		newExceptionCommand(newService),
+		newServeCommand(newService, newHandler),
 	)
 
 	return root

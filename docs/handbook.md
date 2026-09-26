@@ -798,6 +798,33 @@ flowchart TD
 います。連携仕様の重要な判断は`docs/adr/0005-pownforge-integration.md`
 として記録される想定ですが、本書執筆時点ではまだ作成されていません。
 
+### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
+
+**重要(コード変更なし)**: 本節はPhase 5連携の実装ではなく、PownForge側
+指示書(v3 §9)・RiskForge側指示書(v5 §7)が定める「連携コードは明示的な
+依頼がない限り実装しない」制約の**手前**にある、ドキュメントレベルの
+記録です。ユーザーから「これは連携実装ではなく準備作業か」の確認を得た
+上で(2026-09-26)、以下の記録のみを追記しました。コード変更・新規ADRの
+起票は行っていません。
+
+- PownForge側は2026-09-26、`docs/handbook.md`(第14章「`AttackOperation`
+  モデル」・第18.6章)に、MITRE ATT&CK技術IDの語彙(`T1190`/`T1210`/
+  `T1552.004`)を**PownForge側からの提案**として確定しました
+  (PownForgeリポジトリのコミット`c8f7e93`)。
+- この語彙は、`Finding`(RiskForge側)が将来ATT&CKタグを持つ場合の
+  出発点になり得ますが、**RiskForge側では現時点で採用・実装しません**。
+  `RawFinding`自体がまだフィールドレベルで未実装(第20章参照)のため、
+  ATT&CKタグをどこに・どう保持するかはPhase 5でRawFinding/Normalizerを
+  設計する際にあらためて判断します。
+- PownForge側`Finding`とRiskForge側`RawFinding`(概念)の対応表は、
+  PownForge側`docs/handbook.md` §18.5に整理されています。RiskForge側の
+  対応表はここでは新設せず、Phase 5着手時にPownForge側の整理を出発点
+  として参照する想定です。
+- この記録自体は設計判断(ADR記録義務、AGENTS.md §48)には該当しない
+  ため、新規ADRは起票していません。ATT&CKタグの採用方針を実際に決める
+  場合は、`docs/adr/0005-pownforge-integration.md`(Phase 5着手時に作成)
+  または0013以降の番号で別途ADR化してください。
+
 ## 15. 付録: 用語集
 
 本書とAGENTS.mdで使われる用語をまとめます。定義の正本はAGENTS.mdの

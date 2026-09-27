@@ -40,6 +40,7 @@ func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler 
 		newVerifyCommand(newService),
 		newEvidenceCommand(newService),
 		newExceptionCommand(newService),
+		newTokenCommand(newService),
 		newServeCommand(newService, newHandler),
 	)
 

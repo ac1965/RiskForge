@@ -28,3 +28,36 @@ td {
 .error {
   color: #c00;
 }
+
+.hint {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.tile {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 140px;
+}
+
+.tile-value {
+  font-size: 1.8em;
+  font-weight: 600;
+}
+
+.tile-label {
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+
+td button {
+  font-size: 0.85em;
+}

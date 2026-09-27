@@ -1,8 +1,9 @@
-// Talks to internal/api's 5 read-only endpoints (ADR 0011) using a
-// bearer token the operator pastes in on the Settings page (ADR 0012 /
-// 0013: no token-issuance UI here — tokens come from `riskforge token
-// create`). The token lives in localStorage only; it is never sent
-// anywhere but the Authorization header of these requests.
+// Talks to internal/api's endpoints (ADR 0011 read-only, ADR 0014
+// Exception write) using a bearer token the operator pastes in on the
+// Settings page (ADR 0012 / 0013: no token-issuance UI here — tokens
+// come from `riskforge token create`). The token lives in localStorage
+// only; it is never sent anywhere but the Authorization header of these
+// requests.
 
 const TOKEN_STORAGE_KEY = "riskforge.token";
 
@@ -35,16 +36,11 @@ export class ApiError extends Error {
   }
 }
 
-// fetchList calls one of the 5 GET /api/v1/<resource> endpoints and
-// returns its JSON array. A 401/403 surfaces as an ApiError so callers
-// can prompt for a token on the Settings page instead of showing a raw
-// error.
-export async function fetchList<T>(resource: string): Promise<T[]> {
-  const token = getToken();
-  const res = await fetch(`/api/v1/${resource}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-
+// handleResponse turns a non-2xx response into an ApiError carrying
+// internal/api's own {"error": "..."} message when present, shared by
+// every call below so a 401/403 always looks the same to callers (who
+// can then point the user at the Settings page).
+async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `request failed with status ${res.status}`;
     try {
@@ -55,6 +51,31 @@ export async function fetchList<T>(resource: string): Promise<T[]> {
     }
     throw new ApiError(res.status, message);
   }
+  return (await res.json()) as T;
+}
 
-  return (await res.json()) as T[];
+// fetchList calls one of the 5 GET /api/v1/<resource> endpoints and
+// returns its JSON array.
+export async function fetchList<T>(resource: string): Promise<T[]> {
+  const token = getToken();
+  const res = await fetch(`/api/v1/${resource}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return handleResponse<T[]>(res);
+}
+
+// postAction calls one of the Exception write endpoints (ADR 0014) —
+// POST /api/v1/exceptions or POST /api/v1/exceptions/{id}/{action} —
+// and returns the updated (or newly created) resource.
+export async function postAction<T>(path: string, body?: unknown): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`/api/v1/${path}`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return handleResponse<T>(res);
 }

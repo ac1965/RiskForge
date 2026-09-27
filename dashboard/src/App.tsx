@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import { OverviewPage } from "./Overview";
 import { AssetsPage, ExceptionsPage, FindingsPage, PrioritiesPage, RemediationPlansPage, SettingsPage } from "./pages";
 
 const TABS = [
+  { id: "overview", label: "Overview" },
   { id: "assets", label: "Assets" },
   { id: "findings", label: "Findings" },
   { id: "priorities", label: "Priorities" },
@@ -15,10 +17,10 @@ type TabID = (typeof TABS)[number]["id"];
 
 function tabFromHash(): TabID {
   const hash = window.location.hash.replace("#", "");
-  return (TABS.find((t) => t.id === hash)?.id ?? "assets") as TabID;
+  return (TABS.find((t) => t.id === hash)?.id ?? "overview") as TabID;
 }
 
-// App is a plain tab switcher, not a router library — with only 6
+// App is a plain tab switcher, not a router library — with only 7
 // list-scope views (ADR 0013) a routing dependency would be more
 // machinery than the app itself. The hash is kept in sync so a tab is
 // still bookmarkable/shareable.
@@ -50,6 +52,7 @@ export default function App() {
         </nav>
       </header>
       <main>
+        {tab === "overview" && <OverviewPage reloadToken={reloadToken} />}
         {tab === "assets" && <AssetsPage reloadToken={reloadToken} />}
         {tab === "findings" && <FindingsPage reloadToken={reloadToken} />}
         {tab === "priorities" && <PrioritiesPage reloadToken={reloadToken} />}

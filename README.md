@@ -172,14 +172,23 @@ asset(criticality/exposure付き)を登録し、`riskforge token create`で発�
 (`riskforge finding list`で確認)、存在しないIDへの操作が404になること、
 必須フィールド欠落が400になることを確認済み。
 
-Dashboard(一覧表示のみ)実装済み: `dashboard/`(TypeScript + React +
-Vite、[ADR 0013](docs/adr/0013-dashboard-bootstrap.md))が、上記5
-エンドポイントをそのまま表示するタブ切り替え画面を提供する。詳細画面・
-書き込み操作UI・AGENTS.md §41のKPI集計(集計APIが無いため)は対象外。
-Dashboard自身はトークンを発行しない(`riskforge token create`で発行した
-トークンをSettings画面に貼り付け、ブラウザの`localStorage`に保存するのみ)。
+Dashboard実装済み: `dashboard/`(TypeScript + React + Vite、
+[ADR 0013](docs/adr/0013-dashboard-bootstrap.md))が、上記5エンドポイント
+をそのまま表示するタブ切り替え画面を提供する。Exceptionsタブには
+Approve/Reject/Expire/Revokeボタンがあり、ADR 0014の書き込みエンドポイント
+を直接呼び出す(スコープ不足は403がその場に表示される)。Overviewタブは
+AGENTS.md §41のKPIのうち既存の一覧エンドポイントだけで計算できるもの
+(Total Assets・Internet Exposed Assets・Exception Count・Expired
+Exceptions・Reopened Findings・Remediation SLA)をクライアント側で計算
+して表示する。Critical Findings等、Vulnerability/Verificationのデータが
+要るKPIと、1件を掘り下げる詳細画面は対象外のまま。Dashboard自身は
+トークンを発行しない(`riskforge token create`で発行したトークンを
+Settings画面に貼り付け、ブラウザの`localStorage`に保存するのみ)。
 `npm run dev`はViteのdevサーバープロキシで`/api`を`riskforge serve`へ
 転送するため、`internal/api`側にCORS対応は追加していない。実際に
-`riskforge serve`(平文HTTP・loopback、およびTLS・非loopbackの両方)に
-対して起動し、ブラウザで5タブすべてが実データ(またはトークン未設定時の
-401メッセージ)を正しく表示することを確認済み。
+`riskforge serve`(平文HTTP・loopback)に対して起動し、ブラウザで7タブ
+すべてが実データを表示すること、KPI計算値が実データ(asset 2件・実行済
+remediation 1件・申請中exception 1件)と一致すること、Exceptions一覧の
+Reject/Approveボタンが実際に`POST`を送りステータス更新後に再描画される
+ことを確認済み。`window.prompt`が使えない環境(一部の自動化ブラウザ等)
+でクラッシュせず案内メッセージを出すことも確認済み。

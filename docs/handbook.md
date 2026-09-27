@@ -66,11 +66,11 @@ RiskForgeは、UI/CLI・Application・Domain・Infrastructureを明確に分離�
 graph TD
     subgraph FrontEnds["フロントエンド"]
         CLI["riskforge CLI<br/>(internal/cli, Cobra)"]
-        API["HTTP API<br/>(internal/api, net/http)<br/>骨格のみ・未実装"]
+        API["HTTP API<br/>(internal/api, net/http)<br/>読み取り専用5件・トークン認証済み"]
     end
 
     CLI --> Service
-    API -. "将来" .-> Service
+    API --> Service
 
     subgraph App["Application層 (internal/application)"]
         Service["application.Service<br/>Named Domain API群(§26)"]
@@ -712,15 +712,17 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | フェーズ(AGENTS.md §45) | 内容 | 状況 |
 | --- | --- | --- |
 | Phase 1 | Asset / Software / Vulnerability / Finding | 実装済み |
-| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用) | Risk/Priority Engineおよび読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)は実装済み。Dashboard/フロントエンドは未着手(§25A.7どおりバックエンド優先。認証実装(P0-4、[ADR 0012](adr/0012-http-api-authentication.md))がDashboard着手の前提) |
+| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用・トークン認証) | Risk/Priority Engine、読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)はすべて実装済み。Dashboard/フロントエンドのみ未着手(§25A.7どおりバックエンド優先。P0-4完了によりDashboard着手の前提条件は解消済み) |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
 | Phase 5 | Automation / AI assistance / Integrations | 未着手。PownForge連携・NVD/KEV/OSV Data Source Adapterはここに含まれる |
 
 具体的に未実装なもの:
 
-- `internal/api`: パッケージの骨格(`net/http`方針の宣言)のみ。ハンドラー
-  実装はまだない
+- Dashboard(フロントエンド、Phase 2 §41): ディレクトリ自体が存在しない。
+  `internal/api`(読み取り専用HTTP API)・認証(トークン+TLS)は
+  ADR 0011/0012どおり実装済みで、Dashboard着手の前提条件はP0-4完了に
+  より解消されている
 - `internal/infrastructure/datasource`: NVD/CISA KEV/OSV等のAdapter
   インターフェースの説明のみ。実装はまだない(§19)
 - `riskforge-agent` / `riskforge-worker`: バイナリの骨格のみで、
@@ -752,7 +754,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0009](adr/0009-postgres-persistence.md) | PostgreSQL永続化とマイグレーション | pgx+`database/sql`を採用し、配列・構造化データはJSONBに格納。`findings`⇔`evidence`の循環参照解消手順と、追記専用/upsertの使い分けを定義 |
 | [0010](adr/0010-cli-wiring.md) | CLI配線 | `cmd/riskforge/main.go`をcomposition rootとし、`internal/cli`はPostgreSQLの存在を知らない。§27に例示のないコマンド(`asset discover`等)を追加した理由と、`manualExecutor`による暫定実行を記録 |
 | [0011](adr/0011-http-api-design.md) | HTTP APIの設計 | `net/http`標準の`ServeMux`のみを使用。読み取り専用5エンドポイントに限定(P0-2)、封筒無しで配列をそのまま返す、認証・認可は意図的に本PRの対象外(理由と条件を明記)、`internal/api`は`internal/application`にのみ依存し`internal/cli`は`internal/api`をimportしない |
-| [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)はDashboard着手の前提条件として別PRで行う |
+| [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)完了済み(`RequireScope`ミドルウェア・`riskforge token`・TLS必須化)。2026-09-27の追記で`AuthenticateToken`の実シグネチャ(`(*authn.Principal, []string, error)`)を確定 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 

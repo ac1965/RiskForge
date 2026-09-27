@@ -125,20 +125,32 @@ approve → execute） → evidence → verify、および別途、exceptionの
 request → approve → expire のライフサイクル。それぞれが期待通りの
 Findingステータス遷移を駆動することを確認している。
 
-HTTP API（読み取り専用5エンドポイント）実装済み: `riskforge serve`
-（デフォルト`127.0.0.1:8080`、`--addr`で上書き可）が
+HTTP API（読み取り専用5エンドポイント、トークン認証付き）実装済み:
+`riskforge serve`（デフォルト`127.0.0.1:8080`、`--addr`で上書き可）が
 `GET /api/v1/assets`・`/findings`・`/priorities`・`/remediation-plans`・
 `/exceptions`を提供する。いずれも`internal/application`の既存`List*`
 メソッドを薄くラップするだけで、正常時は対象リソースの配列を、失敗時は
-`{"error": "..."}`(500)を返す。認証・認可は本PRでは意図的に未実装
-（理由・条件は
-[docs/adr/0011-http-api-design.md](docs/adr/0011-http-api-design.md)
-「認証・認可」節を参照。Dashboard着手前に
+`{"error": "..."}`(500)を返す。
+
+認証・認可は
 [docs/adr/0012-http-api-authentication.md](docs/adr/0012-http-api-authentication.md)
-が既にトークン認証方式を決定済みだが、その実装(P0-4)はまだこれから)。
+どおり実装済み: `riskforge token create --principal <name> --scope read`
+で発行したbearerトークン(`rf_<random>`、サーバー側はSHA-256ハッシュのみ
+保存)を`Authorization: Bearer <token>`で提示しないと5エンドポイントの
+どれにもアクセスできない(トークン欠落/不正/期限切れ/失効は401、スコープ
+不足は403)。`riskforge token list`/`token revoke <id>`はHTTP API経由では
+提供せず、CLI専用(APIサーバーが落ちていても失効操作ができるようにする
+ため)。`--addr`をloopback(既定の`127.0.0.1`/`::1`/`localhost`)以外に
+bindする場合は`--tls-cert`/`--tls-key`が無いと起動自体を拒否する
+(bearerトークンを平文HTTPで送らせないため)。
+
 `internal/api`は`internal/application`にのみ依存し、`internal/cli`も
 `internal/api`を直接importしない(`cmd/riskforge/main.go`が
 `func(*application.Service) http.Handler`を注入する)。実際にPostgreSQLへ
-asset(criticality/exposure付き)を登録した上で`riskforge serve`を起動し、
-5エンドポイントすべてを`curl`で確認済み(空配列は`null`ではなく`[]`を
-返すことも含む)。
+asset(criticality/exposure付き)を登録し、`riskforge token create`で発行
+した実トークンを使って、`riskforge serve`(平文HTTP・loopback、および
+自己署名証明書を使ったTLS・非loopbackの両方)を起動し、トークン無し/
+不正トークン/スキーム違いがいずれも401になること、正しいトークンで
+5エンドポイントすべてから実データが返ること(空配列は`null`ではなく
+`[]`)、`token revoke`後は同じトークンが即座に401になることを`curl`で
+確認済み。

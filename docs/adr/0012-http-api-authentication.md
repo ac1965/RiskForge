@@ -177,3 +177,40 @@ AGENTS.md §48（不要な抽象化の禁止）に反するため行わない。
   （P1）はこのPRの完了後に着手する。
 - READMEのステータスセクションに、認証方式の決定と実装状況を追記
   する。
+
+## 追記（2026-09-27）: `AuthenticateToken`の実シグネチャ
+
+P0-4を実装する過程で、本ADRの「決定」節と「ミドルウェア」節の間に
+食い違いがあることが判明した。
+
+- 「ドメインモデル」節は`AuthenticateToken`のGo宣言を
+  `AuthenticateToken(ctx context.Context, rawToken string)
+  (*authn.Principal, error)` と明記していた。
+- 「ミドルウェア」節は同じ呼び出しについて「`AuthenticateToken`で
+  **PrincipalとScopesを取得**し、要求スコープを満たすか検証する」と
+  説明しており、これは`*authn.Principal`だけでは実現できない
+  （Scopesは`authn.APIToken`が持つ値であり、`Principal`には無い）。
+
+この食い違いは実装中にコードを書き進める前に発見されたため、
+AGENTS.md §48の手順（矛盾が見つかった場合はコードを書き進めず
+ADRを先に修正する）に従い、ここで実際のシグネチャを確定させる。
+
+**確定した実シグネチャ**:
+
+```go
+func (s *Service) AuthenticateToken(ctx context.Context, rawToken string) (*authn.Principal, []string, error)
+```
+
+- 返り値の`[]string`は、その`rawToken`が指す**その1個のAPIToken**が
+  持つScopesであり、同じPrincipalが持つ他のトークンのScopesを合算した
+  ものではない（`RequireScope`ミドルウェアはこの1トークン分のScopesと
+  要求スコープを比較する）。
+- エラーは、トークンが存在しない・期限切れ・失効済みのいずれの場合も
+  同じ`application.ErrUnauthenticated`を返す。これは意図的な設計判断
+  であり、攻撃者が「トークンが存在しない」のか「期限切れ」なのかを
+  レスポンスから判別できないようにするため。
+- この訂正はコード変更を伴わない(`internal/application/authn.go`の
+  実装は最初からこのシグネチャで書かれており、実装時点で本ADRの
+  疑似コードとの食い違いに気づいた上で、こちらが正本と判断していた)。
+  本追記は、実装が正しく、ADR側の記述が古かったことを事後的に
+  文書として確定させるものである。

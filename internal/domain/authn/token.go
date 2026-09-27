@@ -16,10 +16,20 @@ func NewTokenID() TokenID {
 	return TokenID(id.New())
 }
 
-// ScopeRead is the only scope P0-2's read-only endpoints require (ADR
-// 0012). Write-endpoint scopes (e.g. "remediation:approve") are added by
-// the PR that implements the endpoint they gate, not speculatively here.
+// ScopeRead is the scope P0-2's read-only endpoints require (ADR 0012).
 const ScopeRead = "read"
+
+// ScopeExceptionRequest and ScopeExceptionApprove gate the Exception
+// write endpoints (ADR 0014): requesting an exception is a lower-trust
+// operation than deciding its outcome (approve/reject/expire/revoke),
+// mirroring the propose/approve split ADR 0012 already named for
+// Remediation. Further write-endpoint scopes (e.g.
+// "remediation:approve") are added by the PR that implements the
+// endpoints they gate, not speculatively here.
+const (
+	ScopeExceptionRequest = "exception:request"
+	ScopeExceptionApprove = "exception:approve"
+)
 
 // APIToken is a bearer credential belonging to a Principal (ADR 0012).
 // Only its SHA-256 hash (TokenHash, see HashToken) is ever held here or

@@ -65,7 +65,7 @@ func (s *Service) ApproveException(ctx context.Context, exceptionID exception.ID
 		return nil, fmt.Errorf("application: find exception %s: %w", exceptionID, err)
 	}
 	if e == nil {
-		return nil, fmt.Errorf("application: exception %s not found", exceptionID)
+		return nil, fmt.Errorf("application: exception %s not found: %w", exceptionID, ErrNotFound)
 	}
 
 	before := toJSON(e)
@@ -113,7 +113,7 @@ func (s *Service) RejectException(ctx context.Context, exceptionID exception.ID)
 		return nil, fmt.Errorf("application: find exception %s: %w", exceptionID, err)
 	}
 	if e == nil {
-		return nil, fmt.Errorf("application: exception %s not found", exceptionID)
+		return nil, fmt.Errorf("application: exception %s not found: %w", exceptionID, ErrNotFound)
 	}
 
 	if err := e.Reject(); err != nil {
@@ -134,7 +134,7 @@ func (s *Service) ExpireException(ctx context.Context, exceptionID exception.ID,
 		return nil, fmt.Errorf("application: find exception %s: %w", exceptionID, err)
 	}
 	if e == nil {
-		return nil, fmt.Errorf("application: exception %s not found", exceptionID)
+		return nil, fmt.Errorf("application: exception %s not found: %w", exceptionID, ErrNotFound)
 	}
 
 	before := toJSON(e)
@@ -180,7 +180,7 @@ func (s *Service) RevokeException(ctx context.Context, exceptionID exception.ID)
 		return nil, fmt.Errorf("application: find exception %s: %w", exceptionID, err)
 	}
 	if e == nil {
-		return nil, fmt.Errorf("application: exception %s not found", exceptionID)
+		return nil, fmt.Errorf("application: exception %s not found: %w", exceptionID, ErrNotFound)
 	}
 
 	if err := e.Revoke(); err != nil {

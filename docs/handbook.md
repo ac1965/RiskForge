@@ -712,7 +712,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | フェーズ(AGENTS.md §45) | 内容 | 状況 |
 | --- | --- | --- |
 | Phase 1 | Asset / Software / Vulnerability / Finding | 実装済み |
-| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用・トークン認証) / Dashboard(一覧表示のみ) | Risk/Priority Engine、読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))も5リソースの一覧表示のみ実装済み。詳細画面・書き込みUI・§41のKPI集計は未着手 |
+| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用+Exception書き込み・トークン認証) / Dashboard(一覧表示のみ) | Risk/Priority Engine、読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)、Exceptionワークフローの書き込み系([ADR 0014](adr/0014-exception-write-endpoints.md)、P0-3第一弾)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))も5リソースの一覧表示のみ実装済み。Remediationの書き込み系・Dashboardの詳細画面/書き込みUI・§41のKPI集計は未着手 |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
 | Phase 5 | Automation / AI assistance / Integrations | 未着手。PownForge連携・NVD/KEV/OSV Data Source Adapterはここに含まれる |
@@ -723,6 +723,10 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   (Overdue Remediation等): 一覧表示のみが[ADR 0013](adr/0013-dashboard-bootstrap.md)
   のスコープで実装済みで、これらは意図的に別PR・別ADR(集計API設計)
   に先送りされている
+- Remediationの書き込み系HTTP API(propose/approve/preview/execute):
+  P0-3はExceptionワークフローのみを先に実装し([ADR 0014](adr/0014-exception-write-endpoints.md))、
+  Dry Run・`riskforge-worker`との実行権限分離をHTTP層でどう表現するかを
+  含めて別ADRに意図的に先送りしている
 - `internal/infrastructure/datasource`: NVD/CISA KEV/OSV等のAdapter
   インターフェースの説明のみ。実装はまだない(§19)
 - `riskforge-agent` / `riskforge-worker`: バイナリの骨格のみで、

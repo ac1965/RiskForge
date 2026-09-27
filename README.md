@@ -125,12 +125,23 @@ approve → execute） → evidence → verify、および別途、exceptionの
 request → approve → expire のライフサイクル。それぞれが期待通りの
 Findingステータス遷移を駆動することを確認している。
 
-HTTP API（読み取り専用5エンドポイント、トークン認証付き）実装済み:
-`riskforge serve`（デフォルト`127.0.0.1:8080`、`--addr`で上書き可）が
-`GET /api/v1/assets`・`/findings`・`/priorities`・`/remediation-plans`・
-`/exceptions`を提供する。いずれも`internal/application`の既存`List*`
-メソッドを薄くラップするだけで、正常時は対象リソースの配列を、失敗時は
-`{"error": "..."}`(500)を返す。
+HTTP API（読み取り専用5エンドポイント + Exceptionワークフローの書き込み
+系、トークン認証付き）実装済み: `riskforge serve`（デフォルト
+`127.0.0.1:8080`、`--addr`で上書き可）が`GET /api/v1/assets`・
+`/findings`・`/priorities`・`/remediation-plans`・`/exceptions`を提供する。
+いずれも`internal/application`の既存`List*`メソッドを薄くラップするだけで、
+正常時は対象リソースの配列を、失敗時は`{"error": "..."}`(500)を返す
+([ADR 0011](docs/adr/0011-http-api-design.md)、P0-2)。
+
+これに加えて、[ADR 0014](docs/adr/0014-exception-write-endpoints.md)
+どおりP0-3の第一弾として、Exceptionワークフローの書き込み系
+(コマンド実行を伴わない範囲。Remediationの書き込み系は別ADRに先送り)
+を実装済み: `POST /api/v1/exceptions`(request、201)、
+`POST /api/v1/exceptions/{id}/{approve,reject,expire,revoke}`(200)。
+`RequestedBy`/`ApprovedBy`はリクエストボディではなく認証済み
+Principalの名前を使う(クライアントの自己申告を信用しない)。エラーは
+対象が存在しない場合`404`、不正な状態遷移(例: 承認済みを再度承認)は
+`409`、それ以外のバリデーション失敗は`400`。
 
 認証・認可は
 [docs/adr/0012-http-api-authentication.md](docs/adr/0012-http-api-authentication.md)
@@ -153,7 +164,13 @@ asset(criticality/exposure付き)を登録し、`riskforge token create`で発�
 不正トークン/スキーム違いがいずれも401になること、正しいトークンで
 5エンドポイントすべてから実データが返ること(空配列は`null`ではなく
 `[]`)、`token revoke`後は同じトークンが即座に401になることを`curl`で
-確認済み。
+確認済み。書き込み系も、`exception:request`スコープのトークン(alice)で
+`POST /api/v1/exceptions`を作成し、`exception:approve`スコープのトークン
+(bob)で承認・再承認(409)・失効(revoke)まで一連の流れを`curl`で実行し、
+`RequestedBy`/`ApprovedBy`が期待どおりトークンの持ち主の名前になること、
+承認によってFindingが`accepted`へ、失効によって`reopened`へ遷移すること
+(`riskforge finding list`で確認)、存在しないIDへの操作が404になること、
+必須フィールド欠落が400になることを確認済み。
 
 Dashboard(一覧表示のみ)実装済み: `dashboard/`(TypeScript + React +
 Vite、[ADR 0013](docs/adr/0013-dashboard-bootstrap.md))が、上記5

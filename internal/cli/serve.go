@@ -18,8 +18,9 @@ import (
 // internal/application.
 type HandlerFactory func(*application.Service) http.Handler
 
-// newServeCommand adds `riskforge serve`, exposing the read-only HTTP API
-// decided by ADR 0011 (P0-2) and gated by ADR 0012's bearer-token
+// newServeCommand adds `riskforge serve`, exposing the HTTP API decided
+// by ADR 0011 (P0-2, read-only) and ADR 0014 (P0-3, the Exception
+// workflow's write endpoints), gated by ADR 0012's bearer-token
 // authentication (RequireScope; see internal/api). ADR 0012 does not
 // allow sending a Bearer token over plain HTTP off the local machine, so
 // binding anywhere other than localhost without --tls-cert/--tls-key (or
@@ -31,7 +32,7 @@ func newServeCommand(newService ServiceFactory, newHandler HandlerFactory) *cobr
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Serve the read-only HTTP API (bearer-token auth; TLS required off localhost; see ADR 0011/0012)",
+		Short: "Serve the HTTP API (bearer-token auth; TLS required off localhost; see ADR 0011/0012/0014)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (tlsCert == "") != (tlsKey == "") {
 				return fmt.Errorf("serve: --tls-cert and --tls-key must be given together")
@@ -59,10 +60,10 @@ func newServeCommand(newService ServiceFactory, newHandler HandlerFactory) *cobr
 			server := &http.Server{Handler: newHandler(svc)}
 
 			if tlsEnabled {
-				fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (read-only, bearer-token auth required, TLS)\n", ln.Addr())
+				fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (bearer-token auth required, TLS)\n", ln.Addr())
 				return server.ServeTLS(ln, tlsCert, tlsKey)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (read-only, bearer-token auth required, plain HTTP — localhost only, see ADR 0012)\n", ln.Addr())
+			fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (bearer-token auth required, plain HTTP — localhost only, see ADR 0012)\n", ln.Addr())
 			return server.Serve(ln)
 		},
 	}

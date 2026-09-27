@@ -141,20 +141,34 @@ func (auditFake) Save(context.Context, *audit.Entry) error { return nil }
 // paths, including testRawTokenWrongScope's deliberately insufficient
 // scope.
 const (
-	testRawToken           = "rf_test-token-with-read-scope"
-	testRawTokenWrongScope = "rf_test-token-without-read-scope"
+	testRawToken                   = "rf_test-token-with-read-scope"
+	testRawTokenWrongScope         = "rf_test-token-without-read-scope"
+	testRawTokenExceptionRequester = "rf_test-token-exception-request-scope"
+	testRawTokenExceptionApprover  = "rf_test-token-exception-approve-scope"
+	testExceptionRequesterName     = "requester"
+	testExceptionApproverName      = "approver"
 )
 
-var testPrincipalID = authn.NewPrincipalID()
+var (
+	testPrincipalID                 = authn.NewPrincipalID()
+	testExceptionRequesterPrincipal = authn.NewPrincipalID()
+	testExceptionApproverPrincipal  = authn.NewPrincipalID()
+)
 
 type principalsFake struct{}
 
 func (principalsFake) Save(context.Context, *authn.Principal) error { return nil }
 func (principalsFake) FindByID(_ context.Context, id authn.PrincipalID) (*authn.Principal, error) {
-	if id != testPrincipalID {
+	switch id {
+	case testPrincipalID:
+		return &authn.Principal{ID: testPrincipalID, Name: "test", Kind: authn.KindService, CreatedAt: time.Now()}, nil
+	case testExceptionRequesterPrincipal:
+		return &authn.Principal{ID: testExceptionRequesterPrincipal, Name: testExceptionRequesterName, Kind: authn.KindHuman, CreatedAt: time.Now()}, nil
+	case testExceptionApproverPrincipal:
+		return &authn.Principal{ID: testExceptionApproverPrincipal, Name: testExceptionApproverName, Kind: authn.KindHuman, CreatedAt: time.Now()}, nil
+	default:
 		return nil, nil
 	}
-	return &authn.Principal{ID: testPrincipalID, Name: "test", Kind: authn.KindService, CreatedAt: time.Now()}, nil
 }
 func (principalsFake) FindByName(context.Context, string) (*authn.Principal, error) {
 	return nil, nil
@@ -178,20 +192,36 @@ func (apiTokensFake) FindByTokenHash(_ context.Context, hash string) (*authn.API
 			ID: authn.NewTokenID(), PrincipalID: testPrincipalID,
 			TokenHash: hash, Scopes: []string{"other"}, CreatedAt: time.Now(),
 		}, nil
+	case authn.HashToken(testRawTokenExceptionRequester):
+		return &authn.APIToken{
+			ID: authn.NewTokenID(), PrincipalID: testExceptionRequesterPrincipal,
+			TokenHash: hash, Scopes: []string{authn.ScopeExceptionRequest}, CreatedAt: time.Now(),
+		}, nil
+	case authn.HashToken(testRawTokenExceptionApprover):
+		return &authn.APIToken{
+			ID: authn.NewTokenID(), PrincipalID: testExceptionApproverPrincipal,
+			TokenHash: hash, Scopes: []string{authn.ScopeExceptionApprove}, CreatedAt: time.Now(),
+		}, nil
 	default:
 		return nil, nil
 	}
 }
 func (apiTokensFake) List(context.Context) ([]*authn.APIToken, error) { return nil, nil }
 
-// testServiceFakes bundles the five fakes this package's tests actually
-// configure per test case.
+// testServiceFakes bundles the fakes this package's tests configure per
+// test case. findingsRepo/exceptionsRepo, when set, override
+// findings/exceptions entirely — the write-endpoint tests
+// (exceptions_test.go) need stateful repos (Save persists, FindByID
+// finds it again), unlike the static items/err fakes the read-only list
+// tests use.
 type testServiceFakes struct {
 	assets            assetsFake
 	findings          findingsFake
 	priorityDecisions priorityDecisionsFake
 	remediationPlans  remediationPlansFake
 	exceptions        exceptionsFake
+	findingsRepo      application.FindingRepository
+	exceptionsRepo    application.ExceptionRepository
 }
 
 func newTestService(t *testing.T, f testServiceFakes) *application.Service {
@@ -222,17 +252,26 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 		t.Fatalf("build priority engine: %v", err)
 	}
 
+	var findings application.FindingRepository = f.findings
+	if f.findingsRepo != nil {
+		findings = f.findingsRepo
+	}
+	var exceptions application.ExceptionRepository = f.exceptions
+	if f.exceptionsRepo != nil {
+		exceptions = f.exceptionsRepo
+	}
+
 	svc, err := application.NewService(application.Service{
 		Assets:            f.assets,
 		Software:          softwareFake{},
 		Vulnerabilities:   vulnerabilitiesFake{},
-		Findings:          f.findings,
+		Findings:          findings,
 		RiskAssessments:   riskAssessmentsFake{},
 		PriorityDecisions: f.priorityDecisions,
 		RemediationPlans:  f.remediationPlans,
 		Verifications:     verificationsFake{},
 		Evidence:          evidenceFake{},
-		Exceptions:        f.exceptions,
+		Exceptions:        exceptions,
 		Audit:             auditFake{},
 		Principals:        principalsFake{},
 		APITokens:         apiTokensFake{},

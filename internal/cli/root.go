@@ -38,6 +38,7 @@ func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler 
 		newPriorityCommand(newService),
 		newRemediationCommand(newService),
 		newVerifyCommand(newService),
+		newVerificationCommand(newService),
 		newEvidenceCommand(newService),
 		newExceptionCommand(newService),
 		newTokenCommand(newService),

@@ -48,6 +48,10 @@ type SoftwareRepository interface {
 type VulnerabilityRepository interface {
 	Save(ctx context.Context, v *vulnerability.Vulnerability) error
 	FindByID(ctx context.Context, id vulnerability.ID) (*vulnerability.Vulnerability, error)
+	// List returns every Vulnerability, for `riskforge vulnerability list`
+	// and GET /api/v1/vulnerabilities (ADR 0011 flagged this as a gap to
+	// fill when needed, rather than speculatively).
+	List(ctx context.Context) ([]*vulnerability.Vulnerability, error)
 }
 
 // FindingRepository persists and retrieves Findings.
@@ -89,9 +93,12 @@ type RemediationPlanRepository interface {
 	List(ctx context.Context) ([]*remediation.Plan, error)
 }
 
-// VerificationRepository persists Verifications.
+// VerificationRepository persists and retrieves Verifications.
 type VerificationRepository interface {
 	Save(ctx context.Context, v *verification.Verification) error
+	// List returns every Verification, for `riskforge verification list`
+	// and GET /api/v1/verifications.
+	List(ctx context.Context) ([]*verification.Verification, error)
 }
 
 // EvidenceRepository persists and retrieves Evidence.

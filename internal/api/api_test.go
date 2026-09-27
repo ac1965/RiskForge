@@ -104,11 +104,17 @@ func (softwareFake) FindByNaturalKey(context.Context, asset.ID, string, string, 
 	return nil, nil
 }
 
-type vulnerabilitiesFake struct{}
+type vulnerabilitiesFake struct {
+	items []*vulnerability.Vulnerability
+	err   error
+}
 
-func (vulnerabilitiesFake) Save(context.Context, *vulnerability.Vulnerability) error { return nil }
-func (vulnerabilitiesFake) FindByID(context.Context, vulnerability.ID) (*vulnerability.Vulnerability, error) {
+func (f vulnerabilitiesFake) Save(context.Context, *vulnerability.Vulnerability) error { return nil }
+func (f vulnerabilitiesFake) FindByID(context.Context, vulnerability.ID) (*vulnerability.Vulnerability, error) {
 	return nil, nil
+}
+func (f vulnerabilitiesFake) List(context.Context) ([]*vulnerability.Vulnerability, error) {
+	return f.items, f.err
 }
 
 type riskAssessmentsFake struct{}
@@ -118,9 +124,15 @@ func (riskAssessmentsFake) FindLatestByFinding(context.Context, finding.ID) (*ri
 	return nil, nil
 }
 
-type verificationsFake struct{}
+type verificationsFake struct {
+	items []*verification.Verification
+	err   error
+}
 
-func (verificationsFake) Save(context.Context, *verification.Verification) error { return nil }
+func (f verificationsFake) Save(context.Context, *verification.Verification) error { return nil }
+func (f verificationsFake) List(context.Context) ([]*verification.Verification, error) {
+	return f.items, f.err
+}
 
 type evidenceFake struct{}
 
@@ -220,6 +232,8 @@ type testServiceFakes struct {
 	priorityDecisions priorityDecisionsFake
 	remediationPlans  remediationPlansFake
 	exceptions        exceptionsFake
+	vulnerabilities   vulnerabilitiesFake
+	verifications     verificationsFake
 	findingsRepo      application.FindingRepository
 	exceptionsRepo    application.ExceptionRepository
 }
@@ -264,12 +278,12 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 	svc, err := application.NewService(application.Service{
 		Assets:            f.assets,
 		Software:          softwareFake{},
-		Vulnerabilities:   vulnerabilitiesFake{},
+		Vulnerabilities:   f.vulnerabilities,
 		Findings:          findings,
 		RiskAssessments:   riskAssessmentsFake{},
 		PriorityDecisions: f.priorityDecisions,
 		RemediationPlans:  f.remediationPlans,
-		Verifications:     verificationsFake{},
+		Verifications:     f.verifications,
 		Evidence:          evidenceFake{},
 		Exceptions:        exceptions,
 		Audit:             auditFake{},
@@ -317,6 +331,8 @@ func TestNewMux_EmptyListsAreJSONArrays(t *testing.T) {
 		"/api/v1/priorities",
 		"/api/v1/remediation-plans",
 		"/api/v1/exceptions",
+		"/api/v1/vulnerabilities",
+		"/api/v1/verifications",
 	} {
 		rec := get(t, mux, path)
 		if rec.Code != http.StatusOK {
@@ -349,6 +365,42 @@ func TestNewMux_AssetsReturnsData(t *testing.T) {
 	}
 }
 
+func TestNewMux_VulnerabilitiesReturnsData(t *testing.T) {
+	v := &vulnerability.Vulnerability{ID: vulnerability.NewID(), Title: "Zabbix Agent 2 Heap Overflow", CVEID: "CVE-2021-36159"}
+	mux := NewMux(newTestService(t, testServiceFakes{vulnerabilities: vulnerabilitiesFake{items: []*vulnerability.Vulnerability{v}}}))
+
+	rec := get(t, mux, "/api/v1/vulnerabilities")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	var got []vulnerability.Vulnerability
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(got) != 1 || got[0].CVEID != "CVE-2021-36159" {
+		t.Errorf("got %+v, want one vulnerability with CVE-2021-36159", got)
+	}
+}
+
+func TestNewMux_VerificationsReturnsData(t *testing.T) {
+	v := &verification.Verification{ID: verification.NewID(), Method: verification.MethodScannerRescan, Result: verification.ResultPass}
+	mux := NewMux(newTestService(t, testServiceFakes{verifications: verificationsFake{items: []*verification.Verification{v}}}))
+
+	rec := get(t, mux, "/api/v1/verifications")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	var got []verification.Verification
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(got) != 1 || got[0].Result != verification.ResultPass {
+		t.Errorf("got %+v, want one passing verification", got)
+	}
+}
+
 func TestNewMux_ApplicationErrorBecomes500(t *testing.T) {
 	mux := NewMux(newTestService(t, testServiceFakes{
 		findings: findingsFake{err: errors.New("application: list findings: boom")},
@@ -371,9 +423,9 @@ func TestNewMux_ApplicationErrorBecomes500(t *testing.T) {
 func TestNewMux_UnknownRouteIs404(t *testing.T) {
 	mux := NewMux(newTestService(t, testServiceFakes{}))
 
-	rec := get(t, mux, "/api/v1/vulnerabilities")
+	rec := get(t, mux, "/api/v1/software")
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d (ADR 0011 scopes this PR to five endpoints only)", rec.Code, http.StatusNotFound)
+		t.Errorf("status = %d, want %d (no ListSoftware endpoint exists)", rec.Code, http.StatusNotFound)
 	}
 }
 

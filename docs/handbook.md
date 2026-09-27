@@ -712,7 +712,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | フェーズ(AGENTS.md §45) | 内容 | 状況 |
 | --- | --- | --- |
 | Phase 1 | Asset / Software / Vulnerability / Finding | 実装済み |
-| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用+Exception書き込み・トークン認証) / Dashboard(一覧+Exception承認UI+KPI一部) | Risk/Priority Engine、読み取り専用HTTP API([ADR 0011](adr/0011-http-api-design.md)、P0-2)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)、Exceptionワークフローの書き込み系([ADR 0014](adr/0014-exception-write-endpoints.md)、P0-3第一弾)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))は5リソースの一覧表示に加え、Exceptions一覧の承認操作ボタン(ADR 0014呼び出し)、OverviewタブでのKPI一部(既存一覧エンドポイントだけで計算できる範囲)まで実装済み。Remediationの書き込み系・Dashboardの詳細画面・§41のKPI集計の残り(Vulnerability/Verificationデータが要るもの)は未着手 |
+| Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用7エンドポイント+Exception書き込み・トークン認証) / Dashboard(一覧+Exception承認UI+KPI一部) | Risk/Priority Engine、読み取り専用HTTP API(当初5エンドポイント、[ADR 0011](adr/0011-http-api-design.md)、P0-2。ADR 0011自身がギャップとして残した`vulnerabilities`/`verifications`も、KPIフェーズBの前提として追加し計7エンドポイントに拡張)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)、Exceptionワークフローの書き込み系([ADR 0014](adr/0014-exception-write-endpoints.md)、P0-3第一弾)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))は5リソースの一覧表示に加え、Exceptions一覧の承認操作ボタン(ADR 0014呼び出し)、OverviewタブでのKPI一部(既存一覧エンドポイントだけで計算できる範囲)まで実装済み。KPI集計の残り(Critical Findings等)はバックエンドのエンドポイントは揃ったがDashboard側でまだ使っていない。Remediationの書き込み系・Dashboardの詳細画面は未着手 |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
 | Phase 5 | Automation / AI assistance / Integrations | 未着手。PownForge連携・NVD/KEV/OSV Data Source Adapterはここに含まれる |
@@ -723,14 +723,16 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   を表示済みのため必要性が低く、着手を見送っている
 - Dashboardの書き込みUIのうちException以外(Remediation承認等): 対応する
   HTTP API自体が無い(下記Remediation書き込み系の項を参照)
-- AGENTS.md §41のKPI集計のうち、既存の一覧エンドポイントだけでは計算
-  できないもの(Critical Findings・Known Exploited Findings・Verified
-  Remediations・真のOverdue Remediation): `Vulnerability`/`Verification`
-  のGET一覧エンドポイントが存在しない、`RemediationPlan`に期限
-  フィールドが無い(§4)、といった理由でデータ自体が無い。Total
+- AGENTS.md §41のKPI集計のうち、Dashboardでまだ計算していないもの
+  (Critical Findings・Known Exploited Findings・Verified
+  Remediations・真のOverdue Remediation): `GET /api/v1/vulnerabilities`・
+  `/verifications`はP0-2の続きとして追加済みで、Critical
+  Findings・Known Exploited Findings・Verified Remediationsはこれらを
+  Findingsと突き合わせれば計算可能になった。真のOverdue Remediationのみ
+  `RemediationPlan`に期限フィールドが無い(§4)ため引き続きデータが無い。
+  DashboardのOverviewタブ側の実装はまだ行っていない。Total
   Assets・Internet Exposed Assets・Exception Count・Expired
-  Exceptions・Reopened Findings・Remediation SLAはDashboardの
-  Overviewタブでクライアント側計算により実装済み
+  Exceptions・Reopened Findings・Remediation SLAは実装済み
 - Remediationの書き込み系HTTP API(propose/approve/preview/execute):
   P0-3はExceptionワークフローのみを先に実装し([ADR 0014](adr/0014-exception-write-endpoints.md))、
   Dry Run・`riskforge-worker`との実行権限分離をHTTP層でどう表現するかを

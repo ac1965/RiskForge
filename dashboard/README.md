@@ -14,11 +14,11 @@ Exceptionワークフローの書き込み系、[ADR 0014](../docs/adr/0014-exce
 - Exceptionsの一覧には承認操作(Approve/Reject/Expire/Revoke)ボタンを
   付けている。トークンに対応するスコープ(`exception:request`/
   `exception:approve`)が無ければ、その場で403エラーが表示される
-- Overviewタブに、AGENTS.md §41のKPIのうち既存の一覧エンドポイントだけ
-  で計算できるもの(Total Assets、Internet Exposed Assets、Exception
-  Count、Expired Exceptions、Reopened Findings、Remediation SLA)を
-  表示する。Critical Findings等、Vulnerability/Verificationのデータが
-  要るものは対象外(該当データを返すエンドポイントがまだ無い)
+- Overviewタブに、AGENTS.md §41のKPIのうち「フェーズA」(Total Assets、
+  Internet Exposed Assets、Exception Count、Expired Exceptions、
+  Reopened Findings、Remediation SLA)を表示する。Critical Findings等
+  「フェーズB」向けの`GET /api/v1/vulnerabilities`・`/verifications`は
+  バックエンド側は用意済みだが、Overviewタブ側の計算はまだ実装していない
 - 1件を掘り下げる詳細画面は無い(一覧の列でほぼ全フィールドを表示済み
   のため今のところ不要と判断)
 

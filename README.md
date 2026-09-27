@@ -125,13 +125,15 @@ approve → execute） → evidence → verify、および別途、exceptionの
 request → approve → expire のライフサイクル。それぞれが期待通りの
 Findingステータス遷移を駆動することを確認している。
 
-HTTP API（読み取り専用5エンドポイント + Exceptionワークフローの書き込み
+HTTP API（読み取り専用7エンドポイント + Exceptionワークフローの書き込み
 系、トークン認証付き）実装済み: `riskforge serve`（デフォルト
 `127.0.0.1:8080`、`--addr`で上書き可）が`GET /api/v1/assets`・
-`/findings`・`/priorities`・`/remediation-plans`・`/exceptions`を提供する。
-いずれも`internal/application`の既存`List*`メソッドを薄くラップするだけで、
-正常時は対象リソースの配列を、失敗時は`{"error": "..."}`(500)を返す
-([ADR 0011](docs/adr/0011-http-api-design.md)、P0-2)。
+`/findings`・`/priorities`・`/remediation-plans`・`/exceptions`を提供する
+([ADR 0011](docs/adr/0011-http-api-design.md)、P0-2)。`/vulnerabilities`・
+`/verifications`はADR 0011自身がその時点でのギャップとして残していたが、
+DashboardのKPI集計(後述)の前提として追加した。いずれも
+`internal/application`の既存`List*`メソッドを薄くラップするだけで、
+正常時は対象リソースの配列を、失敗時は`{"error": "..."}`(500)を返す。
 
 これに加えて、[ADR 0014](docs/adr/0014-exception-write-endpoints.md)
 どおりP0-3の第一弾として、Exceptionワークフローの書き込み系
@@ -147,8 +149,8 @@ Principalの名前を使う(クライアントの自己申告を信用しない)
 [docs/adr/0012-http-api-authentication.md](docs/adr/0012-http-api-authentication.md)
 どおり実装済み: `riskforge token create --principal <name> --scope read`
 で発行したbearerトークン(`rf_<random>`、サーバー側はSHA-256ハッシュのみ
-保存)を`Authorization: Bearer <token>`で提示しないと5エンドポイントの
-どれにもアクセスできない(トークン欠落/不正/期限切れ/失効は401、スコープ
+保存)を`Authorization: Bearer <token>`で提示しないと読み取り系7エンドポイント
+のどれにもアクセスできない(トークン欠落/不正/期限切れ/失効は401、スコープ
 不足は403)。`riskforge token list`/`token revoke <id>`はHTTP API経由では
 提供せず、CLI専用(APIサーバーが落ちていても失効操作ができるようにする
 ため)。`--addr`をloopback(既定の`127.0.0.1`/`::1`/`localhost`)以外に
@@ -162,9 +164,13 @@ asset(criticality/exposure付き)を登録し、`riskforge token create`で発�
 した実トークンを使って、`riskforge serve`(平文HTTP・loopback、および
 自己署名証明書を使ったTLS・非loopbackの両方)を起動し、トークン無し/
 不正トークン/スキーム違いがいずれも401になること、正しいトークンで
-5エンドポイントすべてから実データが返ること(空配列は`null`ではなく
-`[]`)、`token revoke`後は同じトークンが即座に401になることを`curl`で
-確認済み。書き込み系も、`exception:request`スコープのトークン(alice)で
+読み取り系7エンドポイントすべてから実データが返ること(空配列は`null`
+ではなく`[]`)、`token revoke`後は同じトークンが即座に401になることを
+`curl`で確認済み。`vulnerability list`/`verification list`という新設の
+CLIコマンドも、実際に`vulnerability add`→`asset discover`→
+`finding correlate`→`evidence record`→`verify`と一連の実データを作った
+上で、それぞれの一覧に反映されることを確認している。書き込み系も、
+`exception:request`スコープのトークン(alice)で
 `POST /api/v1/exceptions`を作成し、`exception:approve`スコープのトークン
 (bob)で承認・再承認(409)・失効(revoke)まで一連の流れを`curl`で実行し、
 `RequestedBy`/`ApprovedBy`が期待どおりトークンの持ち主の名前になること、
@@ -181,7 +187,10 @@ AGENTS.md §41のKPIのうち既存の一覧エンドポイントだけで計算
 (Total Assets・Internet Exposed Assets・Exception Count・Expired
 Exceptions・Reopened Findings・Remediation SLA)をクライアント側で計算
 して表示する。Critical Findings等、Vulnerability/Verificationのデータが
-要るKPIと、1件を掘り下げる詳細画面は対象外のまま。Dashboard自身は
+要るKPIは、バックエンドの`/vulnerabilities`・`/verifications`
+エンドポイントは用意した(下記HTTP API節参照)が、Dashboard側でまだ
+計算に使っていない。1件を掘り下げる詳細画面も引き続き対象外。
+Dashboard自身は
 トークンを発行しない(`riskforge token create`で発行したトークンを
 Settings画面に貼り付け、ブラウザの`localStorage`に保存するのみ)。
 `npm run dev`はViteのdevサーバープロキシで`/api`を`riskforge serve`へ

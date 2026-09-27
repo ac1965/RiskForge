@@ -11,6 +11,7 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/priority"
 	"github.com/ac1965/riskforge/internal/domain/remediation"
+	"github.com/ac1965/riskforge/internal/domain/verification"
 	"github.com/ac1965/riskforge/internal/domain/vulnerability"
 )
 
@@ -34,6 +35,13 @@ func (s *Service) GetAsset(ctx context.Context, id asset.ID) (*asset.Asset, erro
 		return nil, fmt.Errorf("application: asset %s not found", id)
 	}
 	return a, nil
+}
+
+// ListVulnerabilities returns every Vulnerability, for `riskforge
+// vulnerability list` and GET /api/v1/vulnerabilities (ADR 0011 flagged
+// this as a gap to fill when actually needed).
+func (s *Service) ListVulnerabilities(ctx context.Context) ([]*vulnerability.Vulnerability, error) {
+	return s.Vulnerabilities.List(ctx)
 }
 
 // GetVulnerability returns the Vulnerability with the given id.
@@ -110,6 +118,12 @@ func (s *Service) GetRemediationPlan(ctx context.Context, id remediation.ID) (*r
 		return nil, fmt.Errorf("application: remediation plan %s not found", id)
 	}
 	return p, nil
+}
+
+// ListVerifications returns every Verification, for `riskforge
+// verification list` and GET /api/v1/verifications.
+func (s *Service) ListVerifications(ctx context.Context) ([]*verification.Verification, error) {
+	return s.Verifications.List(ctx)
 }
 
 // GetEvidence returns the Evidence with the given id, for `riskforge

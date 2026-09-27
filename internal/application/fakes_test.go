@@ -111,6 +111,15 @@ func (r *vulnerabilityRepo) FindByID(_ context.Context, id vulnerability.ID) (*v
 	return &cp, nil
 }
 
+func (r *vulnerabilityRepo) List(_ context.Context) ([]*vulnerability.Vulnerability, error) {
+	out := make([]*vulnerability.Vulnerability, 0, len(r.byID))
+	for _, v := range r.byID {
+		cp := *v
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
 type findingRepo struct {
 	byID map[finding.ID]*finding.Finding
 }
@@ -251,6 +260,12 @@ func newVerificationRepo() *verificationRepo {
 func (r *verificationRepo) Save(_ context.Context, v *verification.Verification) error {
 	r.saved = append(r.saved, v)
 	return nil
+}
+
+func (r *verificationRepo) List(_ context.Context) ([]*verification.Verification, error) {
+	out := make([]*verification.Verification, len(r.saved))
+	copy(out, r.saved)
+	return out, nil
 }
 
 type evidenceRepo struct {

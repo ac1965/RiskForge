@@ -9,13 +9,15 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/authn"
 )
 
-// NewMux builds the HTTP API: the five read-only GET endpoints decided
-// by ADR 0011 (P0-2), gated by RequireScope's "read" scope (ADR 0012),
-// plus the Exception write endpoints decided by ADR 0014 (P0-3's first
-// slice), gated by "exception:request"/"exception:approve". It is the
-// package's only exported entry point for building the handler;
-// individual handlers and the JSON encode/decode helpers stay
-// unexported.
+// NewMux builds the HTTP API: the read-only GET endpoints decided by
+// ADR 0011 (P0-2, the original 5) plus vulnerabilities/verifications
+// (added when the Dashboard's KPI work actually needed them — ADR 0011
+// itself flagged these as a deliberate, not-yet-necessary gap), all
+// gated by RequireScope's "read" scope (ADR 0012), plus the Exception
+// write endpoints decided by ADR 0014 (P0-3's first slice), gated by
+// "exception:request"/"exception:approve". It is the package's only
+// exported entry point for building the handler; individual handlers
+// and the JSON encode/decode helpers stay unexported.
 func NewMux(svc *application.Service) http.Handler {
 	mux := http.NewServeMux()
 	requireRead := RequireScope(svc, authn.ScopeRead)
@@ -27,6 +29,8 @@ func NewMux(svc *application.Service) http.Handler {
 	mux.Handle("GET /api/v1/priorities", requireRead(handleList(svc.ListPriorities)))
 	mux.Handle("GET /api/v1/remediation-plans", requireRead(handleList(svc.ListRemediationPlans)))
 	mux.Handle("GET /api/v1/exceptions", requireRead(handleList(svc.ListExceptions)))
+	mux.Handle("GET /api/v1/vulnerabilities", requireRead(handleList(svc.ListVulnerabilities)))
+	mux.Handle("GET /api/v1/verifications", requireRead(handleList(svc.ListVerifications)))
 
 	mux.Handle("POST /api/v1/exceptions", requireExceptionRequest(handleRequestException(svc)))
 	mux.Handle("POST /api/v1/exceptions/{id}/approve", requireExceptionApprove(handleApproveException(svc)))

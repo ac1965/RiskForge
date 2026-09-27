@@ -259,6 +259,24 @@ func TestVulnerabilityRepository(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	repo := NewVulnerabilityRepository(db)
+
+	if err := repo.Save(ctx, mustVulnerability(t)); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	found, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(found) != 1 {
+		t.Errorf("List() returned %d vulnerabilities, want 1", len(found))
+	}
+}
+
 func mustFinding(t *testing.T, db *sql.DB, a *asset.Asset, v *vulnerability.Vulnerability) *finding.Finding {
 	t.Helper()
 	ctx := context.Background()
@@ -607,6 +625,60 @@ func TestVerificationRepository(t *testing.T) {
 	}
 	if err := repo.Save(ctx, ver); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
+	}
+}
+
+func TestVerificationRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+	v := mustVulnerability(t)
+	if err := NewVulnerabilityRepository(db).Save(ctx, v); err != nil {
+		t.Fatalf("save vulnerability: %v", err)
+	}
+	f := mustFinding(t, db, a, v)
+
+	ev, err := evidence.New(evidence.Params{
+		Type:        evidence.TypeVerificationResult,
+		Source:      "riskforge-agent",
+		CollectedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssetID:     a.ID,
+		FindingID:   f.ID,
+		ContentHash: evidence.ComputeContentHash([]byte("version check output")),
+		Location:    "s3://evidence/verify-list-1.json",
+	})
+	if err != nil {
+		t.Fatalf("evidence.New() unexpected error: %v", err)
+	}
+	if err := NewEvidenceRepository(db).Save(ctx, ev); err != nil {
+		t.Fatalf("save evidence: %v", err)
+	}
+
+	repo := NewVerificationRepository(db)
+	ver, err := verification.New(verification.Params{
+		FindingID:  f.ID,
+		Method:     verification.MethodScannerRescan,
+		VerifiedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		Result:     verification.ResultPass,
+		EvidenceID: ev.ID,
+	})
+	if err != nil {
+		t.Fatalf("verification.New() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, ver); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	found, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(found) != 1 || found[0].Result != verification.ResultPass {
+		t.Errorf("List() = %+v, want one passing verification", found)
 	}
 }
 

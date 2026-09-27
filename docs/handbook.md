@@ -756,6 +756,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0011](adr/0011-http-api-design.md) | HTTP APIの設計 | `net/http`標準の`ServeMux`のみを使用。読み取り専用5エンドポイントに限定(P0-2)、封筒無しで配列をそのまま返す、認証・認可は意図的に本PRの対象外(理由と条件を明記)、`internal/api`は`internal/application`にのみ依存し`internal/cli`は`internal/api`をimportしない |
 | [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)完了済み(`RequireScope`ミドルウェア・`riskforge token`・TLS必須化)。2026-09-27の追記で`AuthenticateToken`の実シグネチャ(`(*authn.Principal, []string, error)`)を確定 |
 | [0013](adr/0013-dashboard-bootstrap.md) | Dashboardの起動 | ディレクトリ名は`dashboard/`(AGENTS.md §41の呼称に合わせる、PownForgeの`webui/`とは揃えない)。TypeScript/React/Viteを採用。スコープはP0-2の5エンドポイントの一覧表示のみ(§41のKPI集計・詳細画面・書き込みUIは対象外)。トークンはCLIで発行し設定画面に貼り付けてlocalStorageに保存、Web上でのトークン発行UIは作らない(ADR 0012を踏襲) |
+| [0014](adr/0014-exception-write-endpoints.md) | 書き込み系HTTP APIの第一弾(Exception) | コマンド実行を伴わないExceptionワークフロー(request/approve/reject/expire/revoke)のみをP0-3の第一弾とし、Remediation(Dry Run・実行権限分離が絡む)は別ADRに先送り。スコープは`exception:request`/`exception:approve`の2つ。RequestedBy/ApprovedByは認証済みPrincipalから取り、クライアント自己申告にしない。「not found」を`ErrNotFound`でラップし404、状態遷移違反は409、それ以外は400 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 

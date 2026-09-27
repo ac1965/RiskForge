@@ -1,4 +1,4 @@
-.PHONY: build test test-integration vet fmt tidy migrate-up migrate-down up down
+.PHONY: build test test-integration vet fmt tidy migrate-up migrate-down up down dashboard-dev dashboard-build
 
 build:
 	go build -o bin/riskforge ./cmd/riskforge
@@ -38,3 +38,14 @@ up:
 
 down:
 	docker compose down
+
+# Dashboard (ADR 0013): a separate npm project, not part of the Go
+# module. dashboard-dev expects `riskforge serve` already running
+# (dashboard/vite.config.ts proxies /api to it).
+dashboard-dev:
+	npm --prefix dashboard install
+	npm --prefix dashboard run dev
+
+dashboard-build:
+	npm --prefix dashboard install
+	npm --prefix dashboard run build

@@ -154,3 +154,15 @@ asset(criticality/exposure付き)を登録し、`riskforge token create`で発�
 5エンドポイントすべてから実データが返ること(空配列は`null`ではなく
 `[]`)、`token revoke`後は同じトークンが即座に401になることを`curl`で
 確認済み。
+
+Dashboard(一覧表示のみ)実装済み: `dashboard/`(TypeScript + React +
+Vite、[ADR 0013](docs/adr/0013-dashboard-bootstrap.md))が、上記5
+エンドポイントをそのまま表示するタブ切り替え画面を提供する。詳細画面・
+書き込み操作UI・AGENTS.md §41のKPI集計(集計APIが無いため)は対象外。
+Dashboard自身はトークンを発行しない(`riskforge token create`で発行した
+トークンをSettings画面に貼り付け、ブラウザの`localStorage`に保存するのみ)。
+`npm run dev`はViteのdevサーバープロキシで`/api`を`riskforge serve`へ
+転送するため、`internal/api`側にCORS対応は追加していない。実際に
+`riskforge serve`(平文HTTP・loopback、およびTLS・非loopbackの両方)に
+対して起動し、ブラウザで5タブすべてが実データ(またはトークン未設定時の
+401メッセージ)を正しく表示することを確認済み。

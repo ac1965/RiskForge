@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+  white-space: nowrap;
+}
+
+.error {
+  color: #c00;
+}

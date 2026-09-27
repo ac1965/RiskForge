@@ -755,6 +755,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0010](adr/0010-cli-wiring.md) | CLI配線 | `cmd/riskforge/main.go`をcomposition rootとし、`internal/cli`はPostgreSQLの存在を知らない。§27に例示のないコマンド(`asset discover`等)を追加した理由と、`manualExecutor`による暫定実行を記録 |
 | [0011](adr/0011-http-api-design.md) | HTTP APIの設計 | `net/http`標準の`ServeMux`のみを使用。読み取り専用5エンドポイントに限定(P0-2)、封筒無しで配列をそのまま返す、認証・認可は意図的に本PRの対象外(理由と条件を明記)、`internal/api`は`internal/application`にのみ依存し`internal/cli`は`internal/api`をimportしない |
 | [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)完了済み(`RequireScope`ミドルウェア・`riskforge token`・TLS必須化)。2026-09-27の追記で`AuthenticateToken`の実シグネチャ(`(*authn.Principal, []string, error)`)を確定 |
+| [0013](adr/0013-dashboard-bootstrap.md) | Dashboardの起動 | ディレクトリ名は`dashboard/`(AGENTS.md §41の呼称に合わせる、PownForgeの`webui/`とは揃えない)。TypeScript/React/Viteを採用。スコープはP0-2の5エンドポイントの一覧表示のみ(§41のKPI集計・詳細画面・書き込みUIは対象外)。トークンはCLIで発行し設定画面に貼り付けてlocalStorageに保存、Web上でのトークン発行UIは作らない(ADR 0012を踏襲) |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 

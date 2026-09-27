@@ -12,6 +12,7 @@ import (
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/audit"
+	"github.com/ac1965/riskforge/internal/domain/authn"
 	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/explainability"
@@ -676,6 +677,148 @@ func TestAuditRepository(t *testing.T) {
 	}
 	if err := repo.Save(ctx, e); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
+	}
+}
+
+func TestPrincipalRepository(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	repo := NewPrincipalRepository(db)
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p, err := authn.NewPrincipal(authn.PrincipalParams{Name: "dashboard", Kind: authn.KindService, CreatedAt: created})
+	if err != nil {
+		t.Fatalf("authn.NewPrincipal() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, p); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	byID, err := repo.FindByID(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+	if byID == nil || byID.Name != "dashboard" || byID.Kind != authn.KindService {
+		t.Errorf("FindByID() = %+v, want name=dashboard kind=service", byID)
+	}
+
+	byName, err := repo.FindByName(ctx, "dashboard")
+	if err != nil {
+		t.Fatalf("FindByName() unexpected error: %v", err)
+	}
+	if byName == nil || byName.ID != p.ID {
+		t.Errorf("FindByName() = %+v, want id %s", byName, p.ID)
+	}
+
+	if missing, err := repo.FindByName(ctx, "no-such-principal"); err != nil || missing != nil {
+		t.Errorf("FindByName() for an unknown name = (%+v, %v), want (nil, nil)", missing, err)
+	}
+}
+
+func TestAPITokenRepository(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p, err := authn.NewPrincipal(authn.PrincipalParams{Name: "dashboard", Kind: authn.KindService, CreatedAt: created})
+	if err != nil {
+		t.Fatalf("authn.NewPrincipal() unexpected error: %v", err)
+	}
+	if err := NewPrincipalRepository(db).Save(ctx, p); err != nil {
+		t.Fatalf("save principal: %v", err)
+	}
+
+	repo := NewAPITokenRepository(db)
+	raw, err := authn.GenerateRawToken()
+	if err != nil {
+		t.Fatalf("authn.GenerateRawToken() unexpected error: %v", err)
+	}
+	tok, err := authn.NewAPIToken(authn.APITokenParams{
+		PrincipalID: p.ID,
+		TokenHash:   authn.HashToken(raw),
+		Scopes:      []string{authn.ScopeRead},
+		CreatedAt:   created,
+		ExpiresAt:   created.Add(90 * 24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("authn.NewAPIToken() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, tok); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	byHash, err := repo.FindByTokenHash(ctx, authn.HashToken(raw))
+	if err != nil {
+		t.Fatalf("FindByTokenHash() unexpected error: %v", err)
+	}
+	if byHash == nil || byHash.PrincipalID != p.ID || len(byHash.Scopes) != 1 || byHash.Scopes[0] != authn.ScopeRead {
+		t.Fatalf("FindByTokenHash() = %+v, want principal %s with scope %q", byHash, p.ID, authn.ScopeRead)
+	}
+	if !byHash.RevokedAt.IsZero() || !byHash.LastUsedAt.IsZero() {
+		t.Errorf("freshly saved token has RevokedAt=%s LastUsedAt=%s, want both zero", byHash.RevokedAt, byHash.LastUsedAt)
+	}
+
+	// Touch and Revoke round-trip through the same nullable-timestamp
+	// columns exercised above.
+	now := created.Add(time.Hour)
+	byHash.Touch(now)
+	byHash.Revoke(now)
+	if err := repo.Save(ctx, byHash); err != nil {
+		t.Fatalf("Save() after touch/revoke unexpected error: %v", err)
+	}
+
+	byID, err := repo.FindByID(ctx, tok.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+	if byID == nil || byID.RevokedAt.IsZero() || byID.LastUsedAt.IsZero() {
+		t.Errorf("FindByID() = %+v, want RevokedAt and LastUsedAt both set", byID)
+	}
+
+	if missing, err := repo.FindByTokenHash(ctx, authn.HashToken("rf_no-such-token")); err != nil || missing != nil {
+		t.Errorf("FindByTokenHash() for an unknown token = (%+v, %v), want (nil, nil)", missing, err)
+	}
+}
+
+func TestAPITokenRepositoryList(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p, err := authn.NewPrincipal(authn.PrincipalParams{Name: "dashboard", Kind: authn.KindService, CreatedAt: created})
+	if err != nil {
+		t.Fatalf("authn.NewPrincipal() unexpected error: %v", err)
+	}
+	if err := NewPrincipalRepository(db).Save(ctx, p); err != nil {
+		t.Fatalf("save principal: %v", err)
+	}
+
+	repo := NewAPITokenRepository(db)
+	for i := 0; i < 2; i++ {
+		raw, err := authn.GenerateRawToken()
+		if err != nil {
+			t.Fatalf("authn.GenerateRawToken() unexpected error: %v", err)
+		}
+		tok, err := authn.NewAPIToken(authn.APITokenParams{
+			PrincipalID: p.ID,
+			TokenHash:   authn.HashToken(raw),
+			Scopes:      []string{authn.ScopeRead},
+			CreatedAt:   created.Add(time.Duration(i) * time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("authn.NewAPIToken() unexpected error: %v", err)
+		}
+		if err := repo.Save(ctx, tok); err != nil {
+			t.Fatalf("Save() unexpected error: %v", err)
+		}
+	}
+
+	tokens, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(tokens) != 2 {
+		t.Errorf("List() returned %d tokens, want 2", len(tokens))
 	}
 }
 

@@ -99,6 +99,8 @@ func newService() (*application.Service, func() error, error) {
 		Evidence:          postgres.NewEvidenceRepository(db),
 		Exceptions:        postgres.NewExceptionRepository(db),
 		Audit:             postgres.NewAuditRepository(db),
+		Principals:        postgres.NewPrincipalRepository(db),
+		APITokens:         postgres.NewAPITokenRepository(db),
 		RiskEngine:        riskEngine,
 		PriorityEngine:    priorityEngine,
 	})

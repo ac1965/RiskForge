@@ -16,4 +16,6 @@ var (
 	_ application.EvidenceRepository         = (*EvidenceRepository)(nil)
 	_ application.ExceptionRepository        = (*ExceptionRepository)(nil)
 	_ application.AuditRepository            = (*AuditRepository)(nil)
+	_ application.PrincipalRepository        = (*PrincipalRepository)(nil)
+	_ application.APITokenRepository         = (*APITokenRepository)(nil)
 )

@@ -9,7 +9,11 @@
 は独立したテーブルとして保持し、すべてを詰め込む単一の `vulnerabilities`
 テーブルは作らない。`audit_log` も独立したテーブルであり、AGENTS.md §29の
 明示的なリストには含まれていないが、`audit.Entry`（§30、Phase 4）を永続化
-するために必要である。
+するために必要である。`principals`/`api_tokens`（マイグレーション
+`000012`/`000013`）も同様にAGENTS.md §29には無いが、HTTP APIのトークン
+認証（[ADR 0012](../docs/adr/0012-http-api-authentication.md)）のために
+追加した。生のbearerトークンは`api_tokens.token_hash`（SHA-256ハッシュ）
+としてのみ保存し、生の値自体はどのテーブルにも保存しない。
 
 `§29` は `remediation_plans` とは別に `remediation_actions` テーブルも
 挙げている。ドメインモデル（`internal/domain/remediation`）には §14の

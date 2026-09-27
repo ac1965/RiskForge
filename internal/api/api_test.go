@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ac1965/riskforge/internal/application"
 	"github.com/ac1965/riskforge/internal/domain/asset"
@@ -132,11 +133,28 @@ type auditFake struct{}
 
 func (auditFake) Save(context.Context, *audit.Entry) error { return nil }
 
+// testRawToken and testRawTokenWrongScope are fixed bearer tokens
+// principalsFake/apiTokensFake recognize, standing in for tokens that
+// would normally come from `riskforge token create`. Every test in this
+// file that expects a successful call authenticates with testRawToken
+// via the get() helper below; TestRequireScope_* exercises the rejection
+// paths, including testRawTokenWrongScope's deliberately insufficient
+// scope.
+const (
+	testRawToken           = "rf_test-token-with-read-scope"
+	testRawTokenWrongScope = "rf_test-token-without-read-scope"
+)
+
+var testPrincipalID = authn.NewPrincipalID()
+
 type principalsFake struct{}
 
 func (principalsFake) Save(context.Context, *authn.Principal) error { return nil }
-func (principalsFake) FindByID(context.Context, authn.PrincipalID) (*authn.Principal, error) {
-	return nil, nil
+func (principalsFake) FindByID(_ context.Context, id authn.PrincipalID) (*authn.Principal, error) {
+	if id != testPrincipalID {
+		return nil, nil
+	}
+	return &authn.Principal{ID: testPrincipalID, Name: "test", Kind: authn.KindService, CreatedAt: time.Now()}, nil
 }
 func (principalsFake) FindByName(context.Context, string) (*authn.Principal, error) {
 	return nil, nil
@@ -148,8 +166,21 @@ func (apiTokensFake) Save(context.Context, *authn.APIToken) error { return nil }
 func (apiTokensFake) FindByID(context.Context, authn.TokenID) (*authn.APIToken, error) {
 	return nil, nil
 }
-func (apiTokensFake) FindByTokenHash(context.Context, string) (*authn.APIToken, error) {
-	return nil, nil
+func (apiTokensFake) FindByTokenHash(_ context.Context, hash string) (*authn.APIToken, error) {
+	switch hash {
+	case authn.HashToken(testRawToken):
+		return &authn.APIToken{
+			ID: authn.NewTokenID(), PrincipalID: testPrincipalID,
+			TokenHash: hash, Scopes: []string{authn.ScopeRead}, CreatedAt: time.Now(),
+		}, nil
+	case authn.HashToken(testRawTokenWrongScope):
+		return &authn.APIToken{
+			ID: authn.NewTokenID(), PrincipalID: testPrincipalID,
+			TokenHash: hash, Scopes: []string{"other"}, CreatedAt: time.Now(),
+		}, nil
+	default:
+		return nil, nil
+	}
 }
 func (apiTokensFake) List(context.Context) ([]*authn.APIToken, error) { return nil, nil }
 
@@ -214,9 +245,22 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 	return svc
 }
 
+// get issues an authenticated GET (RequireScope now gates every route
+// this package serves). Tests of the middleware itself use getAs
+// directly to control or omit the bearer token.
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return getAs(t, h, path, testRawToken)
+}
+
+// getAs issues a GET with rawToken as the bearer token, or with no
+// Authorization header at all when rawToken is "".
+func getAs(t *testing.T, h http.Handler, path, rawToken string) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if rawToken != "" {
+		req.Header.Set("Authorization", "Bearer "+rawToken)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -291,5 +335,85 @@ func TestNewMux_UnknownRouteIs404(t *testing.T) {
 	rec := get(t, mux, "/api/v1/vulnerabilities")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d (ADR 0011 scopes this PR to five endpoints only)", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestRequireScope_MissingAuthorizationHeaderIs401(t *testing.T) {
+	mux := NewMux(newTestService(t, testServiceFakes{}))
+
+	rec := getAs(t, mux, "/api/v1/assets", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+	if body["error"] != errMissingBearerToken.Error() {
+		t.Errorf("error = %q, want %q", body["error"], errMissingBearerToken.Error())
+	}
+}
+
+func TestRequireScope_UnknownTokenIs401(t *testing.T) {
+	mux := NewMux(newTestService(t, testServiceFakes{}))
+
+	rec := getAs(t, mux, "/api/v1/assets", "rf_this-token-does-not-exist")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+	if body["error"] != errInvalidToken.Error() {
+		t.Errorf("error = %q, want %q", body["error"], errInvalidToken.Error())
+	}
+}
+
+func TestRequireScope_WrongSchemeIs401(t *testing.T) {
+	mux := NewMux(newTestService(t, testServiceFakes{}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/assets", nil)
+	req.Header.Set("Authorization", "Basic "+testRawToken)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestRequireScope_InsufficientScopeIs403(t *testing.T) {
+	mux := NewMux(newTestService(t, testServiceFakes{}))
+
+	rec := getAs(t, mux, "/api/v1/assets", testRawTokenWrongScope)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+	if body["error"] != errInsufficientScope.Error() {
+		t.Errorf("error = %q, want %q", body["error"], errInsufficientScope.Error())
+	}
+}
+
+func TestRequireScope_PutsPrincipalInContext(t *testing.T) {
+	var gotPrincipal *authn.Principal
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPrincipal, _ = PrincipalFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	svc := newTestService(t, testServiceFakes{})
+	handler := RequireScope(svc, authn.ScopeRead)(inner)
+
+	rec := getAs(t, handler, "/", testRawToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if gotPrincipal == nil || gotPrincipal.ID != testPrincipalID {
+		t.Errorf("PrincipalFromContext() = %+v, want principal %s", gotPrincipal, testPrincipalID)
 	}
 }

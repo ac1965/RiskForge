@@ -6,20 +6,24 @@ import (
 	"net/http"
 
 	"github.com/ac1965/riskforge/internal/application"
+	"github.com/ac1965/riskforge/internal/domain/authn"
 )
 
 // NewMux builds the read-only HTTP API decided by ADR 0011 (P0-2): five
 // GET endpoints, each a thin wrapper around an existing
-// application.Service "List*" method. It is the package's only exported
-// entry point; individual handlers and the JSON encode/decode helpers
-// stay unexported.
+// application.Service "List*" method, gated by RequireScope's "read"
+// scope (ADR 0012). It is the package's only exported entry point for
+// building the handler; individual handlers and the JSON encode/decode
+// helpers stay unexported.
 func NewMux(svc *application.Service) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/assets", handleList(svc.ListAssets))
-	mux.HandleFunc("GET /api/v1/findings", handleList(svc.ListFindings))
-	mux.HandleFunc("GET /api/v1/priorities", handleList(svc.ListPriorities))
-	mux.HandleFunc("GET /api/v1/remediation-plans", handleList(svc.ListRemediationPlans))
-	mux.HandleFunc("GET /api/v1/exceptions", handleList(svc.ListExceptions))
+	requireRead := RequireScope(svc, authn.ScopeRead)
+
+	mux.Handle("GET /api/v1/assets", requireRead(handleList(svc.ListAssets)))
+	mux.Handle("GET /api/v1/findings", requireRead(handleList(svc.ListFindings)))
+	mux.Handle("GET /api/v1/priorities", requireRead(handleList(svc.ListPriorities)))
+	mux.Handle("GET /api/v1/remediation-plans", requireRead(handleList(svc.ListRemediationPlans)))
+	mux.Handle("GET /api/v1/exceptions", requireRead(handleList(svc.ListExceptions)))
 	return mux
 }
 

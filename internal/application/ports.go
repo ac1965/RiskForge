@@ -5,6 +5,7 @@ import (
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/audit"
+	"github.com/ac1965/riskforge/internal/domain/authn"
 	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
@@ -114,6 +115,27 @@ type ExceptionRepository interface {
 // defeat its purpose.
 type AuditRepository interface {
 	Save(ctx context.Context, e *audit.Entry) error
+}
+
+// PrincipalRepository persists and retrieves Principals (ADR 0012).
+type PrincipalRepository interface {
+	Save(ctx context.Context, p *authn.Principal) error
+	FindByID(ctx context.Context, id authn.PrincipalID) (*authn.Principal, error)
+	// FindByName is CreateAPIToken's find-or-create key: reissuing a
+	// token for a principal name that already exists attaches the new
+	// token to the existing Principal instead of creating a duplicate.
+	FindByName(ctx context.Context, name string) (*authn.Principal, error)
+}
+
+// APITokenRepository persists and retrieves APITokens (ADR 0012).
+type APITokenRepository interface {
+	Save(ctx context.Context, t *authn.APIToken) error
+	FindByID(ctx context.Context, id authn.TokenID) (*authn.APIToken, error)
+	// FindByTokenHash is AuthenticateToken's lookup key: a presented
+	// bearer token is hashed and looked up by that hash, never by ID.
+	FindByTokenHash(ctx context.Context, tokenHash string) (*authn.APIToken, error)
+	// List returns every APIToken, for `riskforge token list`.
+	List(ctx context.Context) ([]*authn.APIToken, error)
 }
 
 // RemediationExecutor performs the actual, infrastructure-level change a

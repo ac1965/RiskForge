@@ -6,6 +6,7 @@ import (
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/audit"
+	"github.com/ac1965/riskforge/internal/domain/authn"
 	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
@@ -318,6 +319,81 @@ func newAuditRepo() *auditRepo {
 func (r *auditRepo) Save(_ context.Context, e *audit.Entry) error {
 	r.saved = append(r.saved, e)
 	return nil
+}
+
+type principalRepo struct {
+	byID   map[authn.PrincipalID]*authn.Principal
+	byName map[string]authn.PrincipalID
+}
+
+func newPrincipalRepo() *principalRepo {
+	return &principalRepo{byID: map[authn.PrincipalID]*authn.Principal{}, byName: map[string]authn.PrincipalID{}}
+}
+
+func (r *principalRepo) Save(_ context.Context, p *authn.Principal) error {
+	cp := *p
+	r.byID[p.ID] = &cp
+	r.byName[p.Name] = p.ID
+	return nil
+}
+
+func (r *principalRepo) FindByID(_ context.Context, id authn.PrincipalID) (*authn.Principal, error) {
+	p, ok := r.byID[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *p
+	return &cp, nil
+}
+
+func (r *principalRepo) FindByName(_ context.Context, name string) (*authn.Principal, error) {
+	id, ok := r.byName[name]
+	if !ok {
+		return nil, nil
+	}
+	return r.FindByID(context.Background(), id)
+}
+
+type apiTokenRepo struct {
+	byID        map[authn.TokenID]*authn.APIToken
+	byTokenHash map[string]authn.TokenID
+}
+
+func newAPITokenRepo() *apiTokenRepo {
+	return &apiTokenRepo{byID: map[authn.TokenID]*authn.APIToken{}, byTokenHash: map[string]authn.TokenID{}}
+}
+
+func (r *apiTokenRepo) Save(_ context.Context, t *authn.APIToken) error {
+	cp := *t
+	r.byID[t.ID] = &cp
+	r.byTokenHash[t.TokenHash] = t.ID
+	return nil
+}
+
+func (r *apiTokenRepo) FindByID(_ context.Context, id authn.TokenID) (*authn.APIToken, error) {
+	t, ok := r.byID[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *t
+	return &cp, nil
+}
+
+func (r *apiTokenRepo) FindByTokenHash(_ context.Context, hash string) (*authn.APIToken, error) {
+	id, ok := r.byTokenHash[hash]
+	if !ok {
+		return nil, nil
+	}
+	return r.FindByID(context.Background(), id)
+}
+
+func (r *apiTokenRepo) List(_ context.Context) ([]*authn.APIToken, error) {
+	out := make([]*authn.APIToken, 0, len(r.byID))
+	for _, t := range r.byID {
+		cp := *t
+		out = append(out, &cp)
+	}
+	return out, nil
 }
 
 // succeedingExecutor is a RemediationExecutor that always succeeds.

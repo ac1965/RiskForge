@@ -23,6 +23,8 @@ type Service struct {
 	Evidence          EvidenceRepository
 	Exceptions        ExceptionRepository
 	Audit             AuditRepository
+	Principals        PrincipalRepository
+	APITokens         APITokenRepository
 
 	RiskEngine     *risk.Engine
 	PriorityEngine *priority.Engine
@@ -54,6 +56,10 @@ func NewService(deps Service) (*Service, error) {
 		return nil, fmt.Errorf("application: exception repository is required")
 	case deps.Audit == nil:
 		return nil, fmt.Errorf("application: audit repository is required")
+	case deps.Principals == nil:
+		return nil, fmt.Errorf("application: principal repository is required")
+	case deps.APITokens == nil:
+		return nil, fmt.Errorf("application: api token repository is required")
 	case deps.RiskEngine == nil:
 		return nil, fmt.Errorf("application: risk engine is required")
 	case deps.PriorityEngine == nil:

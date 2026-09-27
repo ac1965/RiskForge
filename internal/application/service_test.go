@@ -19,6 +19,8 @@ type testRepos struct {
 	evidence          *evidenceRepo
 	exceptions        *exceptionRepo
 	audit             *auditRepo
+	principals        *principalRepo
+	apiTokens         *apiTokenRepo
 }
 
 func newTestService(t *testing.T) (*Service, *testRepos) {
@@ -36,6 +38,8 @@ func newTestService(t *testing.T) (*Service, *testRepos) {
 		evidence:          newEvidenceRepo(),
 		exceptions:        newExceptionRepo(),
 		audit:             newAuditRepo(),
+		principals:        newPrincipalRepo(),
+		apiTokens:         newAPITokenRepo(),
 	}
 
 	riskEngine, err := risk.NewEngine(
@@ -75,6 +79,8 @@ func newTestService(t *testing.T) (*Service, *testRepos) {
 		Evidence:          repos.evidence,
 		Exceptions:        repos.exceptions,
 		Audit:             repos.audit,
+		Principals:        repos.principals,
+		APITokens:         repos.apiTokens,
 		RiskEngine:        riskEngine,
 		PriorityEngine:    priorityEngine,
 	})
@@ -103,7 +109,8 @@ func TestNewServiceRequiresAllDependencies(t *testing.T) {
 		Assets: repos.assets, Software: repos.software, Vulnerabilities: repos.vulnerabilities,
 		Findings: repos.findings, RiskAssessments: repos.riskAssessments, PriorityDecisions: repos.priorityDecisions,
 		RemediationPlans: repos.remediationPlans, Verifications: repos.verifications, Evidence: repos.evidence,
-		Exceptions: repos.exceptions, Audit: repos.audit, RiskEngine: riskEngine, PriorityEngine: priorityEngine,
+		Exceptions: repos.exceptions, Audit: repos.audit, Principals: repos.principals, APITokens: repos.apiTokens,
+		RiskEngine: riskEngine, PriorityEngine: priorityEngine,
 	}
 
 	missing := full

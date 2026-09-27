@@ -11,6 +11,7 @@ import (
 	"github.com/ac1965/riskforge/internal/application"
 	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/audit"
+	"github.com/ac1965/riskforge/internal/domain/authn"
 	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
@@ -131,6 +132,27 @@ type auditFake struct{}
 
 func (auditFake) Save(context.Context, *audit.Entry) error { return nil }
 
+type principalsFake struct{}
+
+func (principalsFake) Save(context.Context, *authn.Principal) error { return nil }
+func (principalsFake) FindByID(context.Context, authn.PrincipalID) (*authn.Principal, error) {
+	return nil, nil
+}
+func (principalsFake) FindByName(context.Context, string) (*authn.Principal, error) {
+	return nil, nil
+}
+
+type apiTokensFake struct{}
+
+func (apiTokensFake) Save(context.Context, *authn.APIToken) error { return nil }
+func (apiTokensFake) FindByID(context.Context, authn.TokenID) (*authn.APIToken, error) {
+	return nil, nil
+}
+func (apiTokensFake) FindByTokenHash(context.Context, string) (*authn.APIToken, error) {
+	return nil, nil
+}
+func (apiTokensFake) List(context.Context) ([]*authn.APIToken, error) { return nil, nil }
+
 // testServiceFakes bundles the five fakes this package's tests actually
 // configure per test case.
 type testServiceFakes struct {
@@ -181,6 +203,8 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 		Evidence:          evidenceFake{},
 		Exceptions:        f.exceptions,
 		Audit:             auditFake{},
+		Principals:        principalsFake{},
+		APITokens:         apiTokensFake{},
 		RiskEngine:        riskEngine,
 		PriorityEngine:    priorityEngine,
 	})

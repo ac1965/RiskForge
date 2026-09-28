@@ -771,6 +771,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0012](adr/0012-http-api-authentication.md) | HTTP API認証方式 | 既存SSO/リバースプロキシ基盤が無い前提に基づき、APIサーバー自体のトークン認証(`rf_<random>`、SHA-256ハッシュ保存)を採用。実装(P0-4)完了済み(`RequireScope`ミドルウェア・`riskforge token`・TLS必須化)。2026-09-27の追記で`AuthenticateToken`の実シグネチャ(`(*authn.Principal, []string, error)`)を確定 |
 | [0013](adr/0013-dashboard-bootstrap.md) | Dashboardの起動 | ディレクトリ名は`dashboard/`(AGENTS.md §41の呼称に合わせる、PownForgeの`webui/`とは揃えない)。TypeScript/React/Viteを採用。スコープはP0-2の5エンドポイントの一覧表示のみ(§41のKPI集計・詳細画面・書き込みUIは対象外)。トークンはCLIで発行し設定画面に貼り付けてlocalStorageに保存、Web上でのトークン発行UIは作らない(ADR 0012を踏襲) |
 | [0014](adr/0014-exception-write-endpoints.md) | 書き込み系HTTP APIの第一弾(Exception) | コマンド実行を伴わないExceptionワークフロー(request/approve/reject/expire/revoke)のみをP0-3の第一弾とし、Remediation(Dry Run・実行権限分離が絡む)は別ADRに先送り。スコープは`exception:request`/`exception:approve`の2つ。RequestedBy/ApprovedByは認証済みPrincipalから取り、クライアント自己申告にしない。「not found」を`ErrNotFound`でラップし404、状態遷移違反は409、それ以外は400 |
+| [0015](adr/0015-rawfinding-domain-model.md) | RawFindingドメインモデルとNormalizer分類(PownForge連携 第一弾) | `internal/domain/rawfinding`を新設し、`RawFinding`(setter無し、`New`のみ、EvidenceやCVSS等は全て任意項目)と、CVE抽出+Confidenceに基づく3種分類(`known_vulnerability`/`unknown_vulnerability`/`unclassified`)を行う`Classify`をリポジトリ非依存の純粋関数として実装。Adapter・Matcher・ATT&CK/CVSSフィールドの最終採用可否は別ADRに先送り。副次的にADR 0004のEvidenceへ`SourceRef`(任意項目)を追記 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -820,9 +821,19 @@ flowchart TD
 として記録しました(2026-09-28、PownForge側
 [Issue #15](https://github.com/ac1965/PownForge/issues/15)の提案を
 受けてユーザーの明示的な依頼により作成)。このADRはAGENTS.md §20Aが
-既に定めている制約をADR形式にまとめたもので、**連携コードの実装
-そのものは依然として対象外**です(`RawFinding`実装・Adapter実装・
-ATT&CK語彙やCVSSフィールドの採用可否は、Phase 5着手時に別ADRで決定)。
+既に定めている制約をADR形式にまとめたもので、連携コードの実装そのものは
+対象外としていた。
+
+続けてユーザーから改めて「PownForge連携の実装に着手する」という明示的な
+依頼を受け、[ADR 0015](adr/0015-rawfinding-domain-model.md)として
+`RawFinding`ドメインモデルと、CVE抽出+Confidenceに基づく3種分類を行う
+Normalizer(`Classify`)を実装した(2026-09-28、`internal/domain/rawfinding`)。
+AGENTS.md §47・§48に従い、Phase 5全体ではなく「第一弾」としてこの2つに
+スコープを絞っており、**PownForge向けAdapter・Matcher・ATT&CK/CVSS
+フィールドの最終採用可否・実際の取り込み経路(HTTP/CLI)は依然として
+未実装**である。「両プロジェクトとも未実装」という表現は、この第一弾の
+限りではドメインモデルレベルで部分的に実装済みに変わったことに注意
+(取り込み経路そのものは引き続き無い)。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

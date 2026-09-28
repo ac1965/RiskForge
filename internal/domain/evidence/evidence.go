@@ -25,6 +25,7 @@ type Evidence struct {
 	ID          ID
 	Type        string
 	Source      string
+	SourceRef   string // optional: the source system's own identifier for this record (AGENTS.md §20A.4)
 	CollectedAt time.Time
 	AssetID     asset.ID
 	FindingID   finding.ID // optional: may be collected before correlation to a Finding
@@ -36,6 +37,7 @@ type Evidence struct {
 type Params struct {
 	Type        string
 	Source      string
+	SourceRef   string
 	CollectedAt time.Time
 	AssetID     asset.ID
 	FindingID   finding.ID
@@ -44,8 +46,9 @@ type Params struct {
 }
 
 // New creates an Evidence record from p, validating required fields.
-// FindingID is the only optional field: evidence (e.g. a raw scan result)
-// may be collected before it is correlated to a specific Finding.
+// FindingID and SourceRef are the only optional fields: evidence (e.g. a
+// raw scan result) may be collected before it is correlated to a specific
+// Finding, and not every source has its own identifier scheme to record.
 func New(p Params) (*Evidence, error) {
 	if strings.TrimSpace(p.Type) == "" {
 		return nil, fmt.Errorf("evidence: type is required")
@@ -70,6 +73,7 @@ func New(p Params) (*Evidence, error) {
 		ID:          NewID(),
 		Type:        p.Type,
 		Source:      p.Source,
+		SourceRef:   p.SourceRef,
 		CollectedAt: p.CollectedAt,
 		AssetID:     p.AssetID,
 		FindingID:   p.FindingID,

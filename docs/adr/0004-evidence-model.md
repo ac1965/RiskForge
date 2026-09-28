@@ -36,6 +36,16 @@ Findingと混同してはならないと定めている（§44 不変条件4）�
   はInfrastructureの責務であり、このパッケージをストレージ/ネット
   ワーク依存から切り離している（§25）。
 
+### 追記（2026-09-28、[ADR 0015](0015-rawfinding-domain-model.md)）
+
+AGENTS.md §20A.4（PownForge連携のEvidence受け渡し）が定めるフィールド
+一覧には `source_ref` があるが、上記の決定時点ではこれを含めていなかった
+ことが分かった。§20A.7「重複判定にはsourceとsource_refを用いる」を
+満たすため、`FindingID` と同じ「省略可」の任意項目として
+`SourceRef string` を追加した。この決定自体（setter無し、`New`のみ、
+必須項目の構成）は変更していない。既存の呼び出し元はゼロ値のまま動作し
+後方互換を保つ。
+
 ## 影響
 
 - Evidenceにはsetterが存在しないため、evidenceを「更新」したいコード

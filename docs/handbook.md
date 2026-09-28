@@ -774,6 +774,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0015](adr/0015-rawfinding-domain-model.md) | RawFindingドメインモデルとNormalizer分類(PownForge連携 第一弾) | `internal/domain/rawfinding`を新設し、`RawFinding`(setter無し、`New`のみ、EvidenceやCVSS等は全て任意項目)と、CVE抽出+Confidenceに基づく3種分類(`known_vulnerability`/`unknown_vulnerability`/`unclassified`)を行う`Classify`をリポジトリ非依存の純粋関数として実装。Adapter・Matcher・ATT&CK/CVSSフィールドの最終採用可否は別ADRに先送り。副次的にADR 0004のEvidenceへ`SourceRef`(任意項目)を追記 |
 | [0016](adr/0016-rawfinding-matcher.md) | Matcher: 既知CVEの突き合わせ(PownForge連携 第二弾) | `VulnerabilityRepository.FindByCVE`を追加(既存の`vulnerabilities_cve_id_idx`をそのまま使えることを確認、新規マイグレーション不要)。`Service.MatchRawFinding`が`rawfinding.Classify`→(`known_vulnerability`なら)`FindByCVE`→既存の`CorrelateFindings`という3段階のみを行い、`unknown_vulnerability`/`unclassified`ケースの新規Vulnerability自動登録・RawFinding永続化は別ADRに先送り。`go test -tags=integration`(実PostgreSQLコンテナ)で`FindByCVE`を実機検証済み |
 | [0017](adr/0017-unknown-vulnerability-registration.md) | CVEを持たないVulnerabilityの自動登録とSeverityの供給元(PownForge連携 第三弾) | `unknown_vulnerability`ケースを実装。Severityは推測せず、既存の`SeverityUnknown`(`riskforge vulnerability`の既定値でもある)とRisk Engineの既存CVSS加点ロジック(`Severity`と`CVSSv3*4`の大きい方を採用)にそのまま乗せる形で`NativeSeverity`→`Severity`をマッピング。idempotencyには`(Source, Title)`を`Provenance.SourceID`として使う近似解を採用(安定なチェックID専用フィールドは無いため、Adapter実装時の課題として明記)。新規マイグレーション`000014`(`vulnerabilities_provenance_idx`)を実PostgreSQLで検証済み |
+| [0018](adr/0018-pownforge-adapter-and-unclassified-persistence.md) | Adapter(normalize)とunclassifiedケースの永続化(PownForge連携 第四弾) | `RawFindingRepository`+`raw_findings`テーブルを新設し、`unclassified`ケース(§20A.2ケース3)を実際に「保留」として永続化。`internal/infrastructure/scanner/pownforge`(新設)の`Normalize`が、PownForgeの実際のソースコード(`finding.py`/`evidence.py`)のフィールド名で確認したRunRecord JSON形状をRawFindingへ変換。`status="false-positive"`は除外、Confidenceは`(source, status)`からマッピング。`fetch()`/`validate()`/`store()`のCLI・HTTP配線、target名→asset.IDの解決は次のADRに先送り。実装中にADR 0015のEvidence.SourceRefがマイグレーション・Postgres実装に配線されていない漏れを発見し、副次的に修正(migration 000015) |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -857,6 +858,20 @@ Risk Engineが既に持つ`Severity`/`CVSSv3`の大きい方を採用する仕�
 ADR自身に明記している。`unclassified`ケースの永続化・PownForge向け
 Adapter・ATT&CK/CVSSフィールドの最終採用可否は、引き続き未実装のまま
 である。
+
+続けて[ADR 0018](adr/0018-pownforge-adapter-and-unclassified-persistence.md)
+として、`unclassified`ケースの永続化(`RawFindingRepository`+
+`raw_findings`テーブル、AGENTS.md §20A.2ケース3の「保留する」を文字通り
+実装)と、PownForge Adapterの`normalize()`(`internal/infrastructure/
+scanner/pownforge`)を実装した(2026-09-28)。`Normalize`はPownForgeの
+実際のソースコード(`finding.py`/`evidence.py`)のフィールド名を確認した
+上でRunRecord JSONを変換し、`status="false-positive"`の除外、
+`(source, status)`からのConfidenceマッピングを行う。実装中に
+ADR 0015のEvidence.SourceRefがマイグレーション・Postgres実装に配線
+されていなかったことに気づき、副次的に修正した。`fetch()`/`validate()`/
+`store()`のCLI・HTTP配線、PownForgeのtarget名→RiskForge asset.IDの
+解決、Evidenceの橋渡し、ATT&CK/CVSSフィールドの最終採用可否は、引き続き
+未実装のままである。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

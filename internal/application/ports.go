@@ -10,6 +10,7 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/priority"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 	"github.com/ac1965/riskforge/internal/domain/remediation"
 	"github.com/ac1965/riskforge/internal/domain/risk"
 	"github.com/ac1965/riskforge/internal/domain/software"
@@ -68,6 +69,19 @@ type VulnerabilityRepository interface {
 	// and GET /api/v1/vulnerabilities (ADR 0011 flagged this as a gap to
 	// fill when needed, rather than speculatively).
 	List(ctx context.Context) ([]*vulnerability.Vulnerability, error)
+}
+
+// RawFindingRepository persists RawFindings that MatchRawFinding (ADR
+// 0015-0018) held rather than acted on (ClassificationUnclassified,
+// AGENTS.md §20A.2 case 3). It is intentionally write-and-list only: a
+// held RawFinding is reviewed by a human, not programmatically updated by
+// this package.
+type RawFindingRepository interface {
+	Save(ctx context.Context, rf *rawfinding.RawFinding) error
+	FindByID(ctx context.Context, id rawfinding.ID) (*rawfinding.RawFinding, error)
+	// List returns every held RawFinding, for a future review UI/CLI
+	// command (not yet implemented -- ADR 0018 "対象外").
+	List(ctx context.Context) ([]*rawfinding.RawFinding, error)
 }
 
 // FindingRepository persists and retrieves Findings.

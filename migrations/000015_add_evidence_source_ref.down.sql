@@ -1,0 +1,1 @@
+ALTER TABLE evidence DROP COLUMN IF EXISTS source_ref;

@@ -15,6 +15,7 @@ type Service struct {
 	Assets            AssetRepository
 	Software          SoftwareRepository
 	Vulnerabilities   VulnerabilityRepository
+	RawFindings       RawFindingRepository
 	Findings          FindingRepository
 	RiskAssessments   RiskAssessmentRepository
 	PriorityDecisions PriorityDecisionRepository
@@ -40,6 +41,8 @@ func NewService(deps Service) (*Service, error) {
 		return nil, fmt.Errorf("application: software repository is required")
 	case deps.Vulnerabilities == nil:
 		return nil, fmt.Errorf("application: vulnerability repository is required")
+	case deps.RawFindings == nil:
+		return nil, fmt.Errorf("application: raw finding repository is required")
 	case deps.Findings == nil:
 		return nil, fmt.Errorf("application: finding repository is required")
 	case deps.RiskAssessments == nil:

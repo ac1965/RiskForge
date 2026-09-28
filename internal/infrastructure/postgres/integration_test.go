@@ -18,6 +18,7 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/explainability"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/priority"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 	"github.com/ac1965/riskforge/internal/domain/remediation"
 	"github.com/ac1965/riskforge/internal/domain/risk"
 	"github.com/ac1965/riskforge/internal/domain/software"
@@ -596,6 +597,7 @@ func TestEvidenceRepository(t *testing.T) {
 	ev, err := evidence.New(evidence.Params{
 		Type:        evidence.TypeDetectionResult,
 		Source:      "nessus",
+		SourceRef:   "run-42",
 		CollectedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		AssetID:     a.ID,
 		FindingID:   f.ID,
@@ -621,6 +623,9 @@ func TestEvidenceRepository(t *testing.T) {
 	if found == nil || found.FindingID != f.ID || found.ContentHash != ev.ContentHash {
 		t.Errorf("FindByID() = %+v, want round-tripped %+v", found, ev)
 	}
+	if found.SourceRef != "run-42" {
+		t.Errorf("FindByID() SourceRef = %q, want %q", found.SourceRef, "run-42")
+	}
 
 	// FindingID is optional (AGENTS.md §17).
 	noFinding, err := evidence.New(evidence.Params{
@@ -643,6 +648,63 @@ func TestEvidenceRepository(t *testing.T) {
 	}
 	if foundNoFinding.FindingID != "" {
 		t.Errorf("FindingID = %q, want empty", foundNoFinding.FindingID)
+	}
+}
+
+func TestRawFindingRepository(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	a := mustAsset(t)
+	if err := NewAssetRepository(db).Save(ctx, a); err != nil {
+		t.Fatalf("save asset: %v", err)
+	}
+
+	repo := NewRawFindingRepository(db)
+	score := 5.3
+	rf, err := rawfinding.New(rawfinding.Params{
+		Source:             "pownforge:iac",
+		SourceRef:          "run-1:finding-1",
+		AssetID:            a.ID,
+		Title:              "CKV_DOCKER_1: Ensure port 22 is not exposed",
+		Detail:             "/Dockerfile.EXPOSE (/Dockerfile)",
+		Confidence:         finding.ConfidenceLow,
+		CVSSScore:          &score,
+		CVSSVector:         "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+		NativeSeverity:     "medium",
+		AttackTechniqueIDs: []string{"T1190"},
+		CollectedAt:        time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("rawfinding.New() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, rf); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	found, err := repo.FindByID(ctx, rf.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+	if found == nil {
+		t.Fatal("FindByID() = nil, want the saved rawfinding")
+	}
+	if found.Title != rf.Title || found.Confidence != rf.Confidence {
+		t.Errorf("FindByID() = %+v, want round-tripped %+v", found, rf)
+	}
+	if found.CVSSScore == nil || *found.CVSSScore != score {
+		t.Errorf("FindByID() CVSSScore = %v, want %v", found.CVSSScore, score)
+	}
+	if len(found.AttackTechniqueIDs) != 1 || found.AttackTechniqueIDs[0] != "T1190" {
+		t.Errorf("FindByID() AttackTechniqueIDs = %v, want [T1190]", found.AttackTechniqueIDs)
+	}
+
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Errorf("List() returned %d rawfindings, want 1", len(list))
 	}
 }
 

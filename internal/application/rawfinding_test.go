@@ -156,7 +156,7 @@ func TestMatchRawFindingUnmatchedWhenVulnerabilityNotRegistered(t *testing.T) {
 // no CVE and low/unknown Confidence. This Matcher slice does not act on it
 // yet (ADR 0016/0017 "対象外").
 func TestMatchRawFindingHeldWhenUnclassified(t *testing.T) {
-	svc, _ := newTestService(t)
+	svc, repos := newTestService(t)
 	ctx := context.Background()
 
 	rf := mustRawFinding(t, func(p *rawfinding.Params) {
@@ -173,6 +173,16 @@ func TestMatchRawFindingHeldWhenUnclassified(t *testing.T) {
 	}
 	if f != nil {
 		t.Errorf("MatchRawFinding() finding = %+v, want nil", f)
+	}
+
+	// AGENTS.md §20A.2 case 3 says "保留する" (hold), not discard --
+	// confirm it's actually retrievable, not just silently dropped.
+	saved, err := repos.rawFindings.FindByID(ctx, rf.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+	if saved == nil || saved.Title != rf.Title {
+		t.Errorf("held rawfinding = %+v, want it persisted as %+v", saved, rf)
 	}
 }
 

@@ -27,10 +27,10 @@ func NewEvidenceRepository(db *sql.DB) *EvidenceRepository {
 // that changes an existing row's contents.
 func (r *EvidenceRepository) Save(ctx context.Context, e *evidence.Evidence) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO evidence (id, type, source, collected_at, asset_id, finding_id, content_hash, location)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		INSERT INTO evidence (id, type, source, source_ref, collected_at, asset_id, finding_id, content_hash, location)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		ON CONFLICT (id) DO NOTHING
-	`, e.ID, e.Type, e.Source, e.CollectedAt, e.AssetID, nullString(string(e.FindingID)), e.ContentHash, e.Location)
+	`, e.ID, e.Type, e.Source, e.SourceRef, e.CollectedAt, e.AssetID, nullString(string(e.FindingID)), e.ContentHash, e.Location)
 	if err != nil {
 		return fmt.Errorf("postgres: save evidence %s: %w", e.ID, err)
 	}
@@ -41,13 +41,13 @@ func (r *EvidenceRepository) Save(ctx context.Context, e *evidence.Evidence) err
 // exists.
 func (r *EvidenceRepository) FindByID(ctx context.Context, id evidence.ID) (*evidence.Evidence, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, type, source, collected_at, asset_id, finding_id, content_hash, location
+		SELECT id, type, source, source_ref, collected_at, asset_id, finding_id, content_hash, location
 		FROM evidence WHERE id = $1
 	`, id)
 
 	var e evidence.Evidence
 	var findingID sql.NullString
-	err := row.Scan(&e.ID, &e.Type, &e.Source, &e.CollectedAt, &e.AssetID, &findingID, &e.ContentHash, &e.Location)
+	err := row.Scan(&e.ID, &e.Type, &e.Source, &e.SourceRef, &e.CollectedAt, &e.AssetID, &findingID, &e.ContentHash, &e.Location)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

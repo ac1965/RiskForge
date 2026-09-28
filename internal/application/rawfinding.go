@@ -33,9 +33,9 @@ const (
 	// with a Finding created or confirmed for it.
 	MatchOutcomeRegistered MatchOutcome = "registered"
 	// MatchOutcomeHeld means rawfinding.Classify returned
-	// ClassificationUnclassified (AGENTS.md §20A.2 case 3) -- persisting a
-	// held RawFinding for later review is out of scope here (ADR 0016/0017
-	// "対象外"); rf is neither discarded nor actioned.
+	// ClassificationUnclassified (AGENTS.md §20A.2 case 3): rf is
+	// persisted via RawFindingRepository for later human review (ADR
+	// 0018), not discarded and not acted on automatically.
 	MatchOutcomeHeld MatchOutcome = "held"
 )
 
@@ -55,6 +55,9 @@ func (s *Service) MatchRawFinding(ctx context.Context, rf rawfinding.RawFinding)
 	case rawfinding.ClassificationUnknownVulnerability:
 		return s.matchUnknownVulnerability(ctx, rf)
 	default: // ClassificationUnclassified
+		if err := s.RawFindings.Save(ctx, &rf); err != nil {
+			return nil, "", fmt.Errorf("application: hold unclassified rawfinding: %w", err)
+		}
 		return nil, MatchOutcomeHeld, nil
 	}
 }

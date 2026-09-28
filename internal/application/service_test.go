@@ -11,6 +11,7 @@ type testRepos struct {
 	assets            *assetRepo
 	software          *softwareRepo
 	vulnerabilities   *vulnerabilityRepo
+	rawFindings       *rawFindingRepo
 	findings          *findingRepo
 	riskAssessments   *riskAssessmentRepo
 	priorityDecisions *priorityDecisionRepo
@@ -30,6 +31,7 @@ func newTestService(t *testing.T) (*Service, *testRepos) {
 		assets:            newAssetRepo(),
 		software:          newSoftwareRepo(),
 		vulnerabilities:   newVulnerabilityRepo(),
+		rawFindings:       newRawFindingRepo(),
 		findings:          newFindingRepo(),
 		riskAssessments:   newRiskAssessmentRepo(),
 		priorityDecisions: newPriorityDecisionRepo(),
@@ -71,6 +73,7 @@ func newTestService(t *testing.T) (*Service, *testRepos) {
 		Assets:            repos.assets,
 		Software:          repos.software,
 		Vulnerabilities:   repos.vulnerabilities,
+		RawFindings:       repos.rawFindings,
 		Findings:          repos.findings,
 		RiskAssessments:   repos.riskAssessments,
 		PriorityDecisions: repos.priorityDecisions,
@@ -107,7 +110,8 @@ func TestNewServiceRequiresAllDependencies(t *testing.T) {
 
 	full := Service{
 		Assets: repos.assets, Software: repos.software, Vulnerabilities: repos.vulnerabilities,
-		Findings: repos.findings, RiskAssessments: repos.riskAssessments, PriorityDecisions: repos.priorityDecisions,
+		RawFindings: repos.rawFindings,
+		Findings:    repos.findings, RiskAssessments: repos.riskAssessments, PriorityDecisions: repos.priorityDecisions,
 		RemediationPlans: repos.remediationPlans, Verifications: repos.verifications, Evidence: repos.evidence,
 		Exceptions: repos.exceptions, Audit: repos.audit, Principals: repos.principals, APITokens: repos.apiTokens,
 		RiskEngine: riskEngine, PriorityEngine: priorityEngine,
@@ -117,6 +121,12 @@ func TestNewServiceRequiresAllDependencies(t *testing.T) {
 	missing.Audit = nil
 	if _, err := NewService(missing); err == nil {
 		t.Error("NewService() with nil Audit: want error, got nil")
+	}
+
+	missing = full
+	missing.RawFindings = nil
+	if _, err := NewService(missing); err == nil {
+		t.Error("NewService() with nil RawFindings: want error, got nil")
 	}
 
 	missing = full

@@ -11,6 +11,7 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/priority"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 	"github.com/ac1965/riskforge/internal/domain/remediation"
 	"github.com/ac1965/riskforge/internal/domain/risk"
 	"github.com/ac1965/riskforge/internal/domain/software"
@@ -135,6 +136,38 @@ func (r *vulnerabilityRepo) List(_ context.Context) ([]*vulnerability.Vulnerabil
 	out := make([]*vulnerability.Vulnerability, 0, len(r.byID))
 	for _, v := range r.byID {
 		cp := *v
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
+type rawFindingRepo struct {
+	byID map[rawfinding.ID]*rawfinding.RawFinding
+}
+
+func newRawFindingRepo() *rawFindingRepo {
+	return &rawFindingRepo{byID: map[rawfinding.ID]*rawfinding.RawFinding{}}
+}
+
+func (r *rawFindingRepo) Save(_ context.Context, rf *rawfinding.RawFinding) error {
+	cp := *rf
+	r.byID[rf.ID] = &cp
+	return nil
+}
+
+func (r *rawFindingRepo) FindByID(_ context.Context, id rawfinding.ID) (*rawfinding.RawFinding, error) {
+	rf, ok := r.byID[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *rf
+	return &cp, nil
+}
+
+func (r *rawFindingRepo) List(_ context.Context) ([]*rawfinding.RawFinding, error) {
+	out := make([]*rawfinding.RawFinding, 0, len(r.byID))
+	for _, rf := range r.byID {
+		cp := *rf
 		out = append(out, &cp)
 	}
 	return out, nil

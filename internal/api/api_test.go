@@ -17,6 +17,7 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/exception"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/priority"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 	"github.com/ac1965/riskforge/internal/domain/remediation"
 	"github.com/ac1965/riskforge/internal/domain/risk"
 	"github.com/ac1965/riskforge/internal/domain/software"
@@ -139,6 +140,14 @@ func (f verificationsFake) Save(context.Context, *verification.Verification) err
 func (f verificationsFake) List(context.Context) ([]*verification.Verification, error) {
 	return f.items, f.err
 }
+
+type rawFindingsFake struct{}
+
+func (rawFindingsFake) Save(context.Context, *rawfinding.RawFinding) error { return nil }
+func (rawFindingsFake) FindByID(context.Context, rawfinding.ID) (*rawfinding.RawFinding, error) {
+	return nil, nil
+}
+func (rawFindingsFake) List(context.Context) ([]*rawfinding.RawFinding, error) { return nil, nil }
 
 type evidenceFake struct{}
 
@@ -285,6 +294,7 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 		Assets:            f.assets,
 		Software:          softwareFake{},
 		Vulnerabilities:   f.vulnerabilities,
+		RawFindings:       rawFindingsFake{},
 		Findings:          findings,
 		RiskAssessments:   riskAssessmentsFake{},
 		PriorityDecisions: f.priorityDecisions,

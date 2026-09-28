@@ -91,6 +91,7 @@ func newService() (*application.Service, func() error, error) {
 		Assets:            postgres.NewAssetRepository(db),
 		Software:          postgres.NewSoftwareRepository(db),
 		Vulnerabilities:   postgres.NewVulnerabilityRepository(db),
+		RawFindings:       postgres.NewRawFindingRepository(db),
 		Findings:          postgres.NewFindingRepository(db),
 		RiskAssessments:   postgres.NewRiskAssessmentRepository(db),
 		PriorityDecisions: postgres.NewPriorityDecisionRepository(db),

@@ -286,6 +286,43 @@ func TestVulnerabilityRepositoryFindByCVE(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityRepositoryFindByProvenanceSourceID(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	repo := NewVulnerabilityRepository(db)
+
+	v, err := vulnerability.New(vulnerability.Params{
+		Title:    "CKV_DOCKER_8: Ensure the last USER is not root",
+		Severity: vulnerability.SeverityUnknown,
+		Provenance: vulnerability.Provenance{
+			Source:   "pownforge:iac",
+			SourceID: "CKV_DOCKER_8: Ensure the last USER is not root",
+		},
+	})
+	if err != nil {
+		t.Fatalf("vulnerability.New() unexpected error: %v", err)
+	}
+	if err := repo.Save(ctx, v); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	found, err := repo.FindByProvenanceSourceID(ctx, "pownforge:iac", "CKV_DOCKER_8: Ensure the last USER is not root")
+	if err != nil {
+		t.Fatalf("FindByProvenanceSourceID() unexpected error: %v", err)
+	}
+	if found == nil || found.ID != v.ID {
+		t.Errorf("FindByProvenanceSourceID() = %+v, want vulnerability %s", found, v.ID)
+	}
+
+	missing, err := repo.FindByProvenanceSourceID(ctx, "pownforge:iac", "some other check")
+	if err != nil {
+		t.Fatalf("FindByProvenanceSourceID() for unknown source_id unexpected error: %v", err)
+	}
+	if missing != nil {
+		t.Errorf("FindByProvenanceSourceID() for unknown source_id = %+v, want nil", missing)
+	}
+}
+
 func TestVulnerabilityRepositoryList(t *testing.T) {
 	db := setupDB(t)
 	ctx := context.Background()

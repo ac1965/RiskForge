@@ -116,6 +116,9 @@ func (f vulnerabilitiesFake) FindByID(context.Context, vulnerability.ID) (*vulne
 func (f vulnerabilitiesFake) FindByCVE(context.Context, string) (*vulnerability.Vulnerability, error) {
 	return nil, nil
 }
+func (f vulnerabilitiesFake) FindByProvenanceSourceID(context.Context, string, string) (*vulnerability.Vulnerability, error) {
+	return nil, nil
+}
 func (f vulnerabilitiesFake) List(context.Context) ([]*vulnerability.Vulnerability, error) {
 	return f.items, f.err
 }

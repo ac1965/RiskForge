@@ -55,6 +55,15 @@ type VulnerabilityRepository interface {
 	// registered yet -- creating one from scratch is not this port's job
 	// (see ADR 0016 "対象外").
 	FindByCVE(ctx context.Context, cveID string) (*vulnerability.Vulnerability, error)
+	// FindByProvenanceSourceID is MatchRawFinding's idempotency key (ADR
+	// 0017) for the ClassificationUnknownVulnerability case (AGENTS.md
+	// §20A.2 case 2, "独自IDのVulnerabilityとして登録する... sourceと
+	// source_idにより出所を必ず記録する"): it looks for an existing
+	// CVE-less Vulnerability already registered under the same
+	// (source, sourceID) pair, so repeated detection of the same
+	// non-CVE issue confirms the existing record instead of creating a
+	// duplicate. Returns (nil, nil), not an error, when none exists yet.
+	FindByProvenanceSourceID(ctx context.Context, source, sourceID string) (*vulnerability.Vulnerability, error)
 	// List returns every Vulnerability, for `riskforge vulnerability list`
 	// and GET /api/v1/vulnerabilities (ADR 0011 flagged this as a gap to
 	// fill when needed, rather than speculatively).

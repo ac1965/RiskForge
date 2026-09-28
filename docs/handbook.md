@@ -773,6 +773,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0014](adr/0014-exception-write-endpoints.md) | 書き込み系HTTP APIの第一弾(Exception) | コマンド実行を伴わないExceptionワークフロー(request/approve/reject/expire/revoke)のみをP0-3の第一弾とし、Remediation(Dry Run・実行権限分離が絡む)は別ADRに先送り。スコープは`exception:request`/`exception:approve`の2つ。RequestedBy/ApprovedByは認証済みPrincipalから取り、クライアント自己申告にしない。「not found」を`ErrNotFound`でラップし404、状態遷移違反は409、それ以外は400 |
 | [0015](adr/0015-rawfinding-domain-model.md) | RawFindingドメインモデルとNormalizer分類(PownForge連携 第一弾) | `internal/domain/rawfinding`を新設し、`RawFinding`(setter無し、`New`のみ、EvidenceやCVSS等は全て任意項目)と、CVE抽出+Confidenceに基づく3種分類(`known_vulnerability`/`unknown_vulnerability`/`unclassified`)を行う`Classify`をリポジトリ非依存の純粋関数として実装。Adapter・Matcher・ATT&CK/CVSSフィールドの最終採用可否は別ADRに先送り。副次的にADR 0004のEvidenceへ`SourceRef`(任意項目)を追記 |
 | [0016](adr/0016-rawfinding-matcher.md) | Matcher: 既知CVEの突き合わせ(PownForge連携 第二弾) | `VulnerabilityRepository.FindByCVE`を追加(既存の`vulnerabilities_cve_id_idx`をそのまま使えることを確認、新規マイグレーション不要)。`Service.MatchRawFinding`が`rawfinding.Classify`→(`known_vulnerability`なら)`FindByCVE`→既存の`CorrelateFindings`という3段階のみを行い、`unknown_vulnerability`/`unclassified`ケースの新規Vulnerability自動登録・RawFinding永続化は別ADRに先送り。`go test -tags=integration`(実PostgreSQLコンテナ)で`FindByCVE`を実機検証済み |
+| [0017](adr/0017-unknown-vulnerability-registration.md) | CVEを持たないVulnerabilityの自動登録とSeverityの供給元(PownForge連携 第三弾) | `unknown_vulnerability`ケースを実装。Severityは推測せず、既存の`SeverityUnknown`(`riskforge vulnerability`の既定値でもある)とRisk Engineの既存CVSS加点ロジック(`Severity`と`CVSSv3*4`の大きい方を採用)にそのまま乗せる形で`NativeSeverity`→`Severity`をマッピング。idempotencyには`(Source, Title)`を`Provenance.SourceID`として使う近似解を採用(安定なチェックID専用フィールドは無いため、Adapter実装時の課題として明記)。新規マイグレーション`000014`(`vulnerabilities_provenance_idx`)を実PostgreSQLで検証済み |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -845,6 +846,17 @@ AGENTS.md §47・§48に従い、Phase 5全体ではなく「第一弾」とし�
 `unknown_vulnerability`/`unclassified`ケースの新規Vulnerability自動
 登録・RawFinding永続化、PownForge向けAdapter、ATT&CK/CVSSフィールドの
 最終採用可否は、引き続き未実装のままである。
+
+続けて[ADR 0017](adr/0017-unknown-vulnerability-registration.md)として、
+`unknown_vulnerability`ケース(CVE無し)の自動登録を実装した
+(2026-09-28)。Severityは推測せず、`vulnerability.Severity`に既にある
+`SeverityUnknown`(`riskforge vulnerability`の既定値でもある)と、
+Risk Engineが既に持つ`Severity`/`CVSSv3`の大きい方を採用する仕組みに
+そのまま乗せた。idempotencyは`(Source, Title)`を`Provenance.SourceID`
+として使う近似解で、安定なチェックID専用フィールドが無いという限界を
+ADR自身に明記している。`unclassified`ケースの永続化・PownForge向け
+Adapter・ATT&CK/CVSSフィールドの最終採用可否は、引き続き未実装のまま
+である。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

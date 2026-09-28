@@ -152,37 +152,153 @@ func TestMatchRawFindingUnmatchedWhenVulnerabilityNotRegistered(t *testing.T) {
 	}
 }
 
-// TestMatchRawFindingHeldWhenNotAKnownVulnerability covers the other two
-// Normalizer classifications (AGENTS.md §20A.2 cases 2 and 3), neither of
-// which this Matcher slice acts on yet (ADR 0016 "対象外").
-func TestMatchRawFindingHeldWhenNotAKnownVulnerability(t *testing.T) {
+// TestMatchRawFindingHeldWhenUnclassified covers AGENTS.md §20A.2 case 3:
+// no CVE and low/unknown Confidence. This Matcher slice does not act on it
+// yet (ADR 0016/0017 "対象外").
+func TestMatchRawFindingHeldWhenUnclassified(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.Title = "unusual response length"
+		p.Confidence = finding.ConfidenceLow
+	})
+
+	f, outcome, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeHeld {
+		t.Errorf("outcome = %q, want %q", outcome, MatchOutcomeHeld)
+	}
+	if f != nil {
+		t.Errorf("MatchRawFinding() finding = %+v, want nil", f)
+	}
+}
+
+// TestMatchRawFindingRegistersUnknownVulnerability covers AGENTS.md
+// §20A.2 case 2: no CVE, but decent Confidence -- registered as a new,
+// CVE-less Vulnerability (ADR 0017).
+func TestMatchRawFindingRegistersUnknownVulnerability(t *testing.T) {
+	svc, repos := newTestService(t)
+	ctx := context.Background()
+
+	a, err := svc.DiscoverAssets(ctx, testAssetParams(), testAssetParams().FirstSeen)
+	if err != nil {
+		t.Fatalf("DiscoverAssets() unexpected error: %v", err)
+	}
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Source = "pownforge:iac"
+		p.Title = "CKV_DOCKER_8: Ensure the last USER is not root"
+		p.Confidence = finding.ConfidenceHigh
+	})
+
+	f, outcome, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeRegistered {
+		t.Fatalf("outcome = %q, want %q", outcome, MatchOutcomeRegistered)
+	}
+	if f == nil || f.AssetID != a.ID {
+		t.Fatalf("MatchRawFinding() finding = %+v, want one for asset %s", f, a.ID)
+	}
+
+	v, err := repos.vulnerabilities.FindByID(ctx, f.VulnerabilityID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+	if v == nil {
+		t.Fatal("registered vulnerability not found")
+	}
+	if v.CVEID != "" {
+		t.Errorf("CVEID = %q, want empty", v.CVEID)
+	}
+	if v.Title != rf.Title {
+		t.Errorf("Title = %q, want %q", v.Title, rf.Title)
+	}
+	if v.Severity != vulnerability.SeverityUnknown {
+		t.Errorf("Severity = %q, want %q (iac plugin reports no native_severity)", v.Severity, vulnerability.SeverityUnknown)
+	}
+	if v.Provenance.Source != rf.Source || v.Provenance.SourceID != rf.Title {
+		t.Errorf("Provenance = %+v, want Source=%q SourceID=%q", v.Provenance, rf.Source, rf.Title)
+	}
+}
+
+// TestMatchRawFindingUnknownVulnerabilityIsIdempotent confirms two
+// RawFindings for the same (Source, Title) reuse the same Vulnerability
+// and confirm the same Finding, rather than registering a duplicate
+// (AGENTS.md §20A.7 / §37), mirroring TestMatchRawFindingIsIdempotent's
+// known-CVE case.
+func TestMatchRawFindingUnknownVulnerabilityIsIdempotent(t *testing.T) {
+	svc, repos := newTestService(t)
+	ctx := context.Background()
+
+	a, err := svc.DiscoverAssets(ctx, testAssetParams(), testAssetParams().FirstSeen)
+	if err != nil {
+		t.Fatalf("DiscoverAssets() unexpected error: %v", err)
+	}
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Source = "pownforge:iac"
+		p.Title = "CKV_DOCKER_8: Ensure the last USER is not root"
+		p.Confidence = finding.ConfidenceHigh
+	})
+	first, _, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() first call unexpected error: %v", err)
+	}
+
+	rf2 := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Source = "pownforge:iac"
+		p.Title = "CKV_DOCKER_8: Ensure the last USER is not root"
+		p.Confidence = finding.ConfidenceHigh
+		p.CollectedAt = rf.CollectedAt.Add(48 * time.Hour)
+	})
+	second, outcome, err := svc.MatchRawFinding(ctx, rf2)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() second call unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeRegistered {
+		t.Fatalf("outcome = %q, want %q", outcome, MatchOutcomeRegistered)
+	}
+	if first.VulnerabilityID != second.VulnerabilityID {
+		t.Errorf("second MatchRawFinding() registered a new vulnerability: %s != %s", first.VulnerabilityID, second.VulnerabilityID)
+	}
+	if first.ID != second.ID {
+		t.Errorf("second MatchRawFinding() created a new finding: %s != %s", first.ID, second.ID)
+	}
+	if len(repos.vulnerabilities.byID) != 1 {
+		t.Errorf("vulnerability repository has %d records, want 1", len(repos.vulnerabilities.byID))
+	}
+}
+
+// TestSeverityFromRawFinding covers the NativeSeverity -> Severity mapping
+// (ADR 0017), including the two cases that are not a direct 1:1 string
+// match.
+func TestSeverityFromRawFinding(t *testing.T) {
 	tests := []struct {
-		name  string
-		title string
-		conf  finding.Confidence
+		name           string
+		nativeSeverity string
+		want           vulnerability.Severity
 	}{
-		{name: "unknown vulnerability (no CVE, decent confidence)", title: "CKV_DOCKER_8: root user", conf: finding.ConfidenceHigh},
-		{name: "unclassified (no CVE, low confidence)", title: "unusual response length", conf: finding.ConfidenceLow},
+		{name: "critical", nativeSeverity: "critical", want: vulnerability.SeverityCritical},
+		{name: "case insensitive", nativeSeverity: "HIGH", want: vulnerability.SeverityHigh},
+		{name: "medium", nativeSeverity: "medium", want: vulnerability.SeverityMedium},
+		{name: "low", nativeSeverity: "low", want: vulnerability.SeverityLow},
+		{name: "nuclei info has no RiskForge equivalent, maps to none", nativeSeverity: "info", want: vulnerability.SeverityNone},
+		{name: "empty (e.g. checkov, which reports no native_severity) maps to unknown", nativeSeverity: "", want: vulnerability.SeverityUnknown},
+		{name: "unrecognized value maps to unknown rather than guessing", nativeSeverity: "weird", want: vulnerability.SeverityUnknown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rf := mustRawFinding(t, func(p *rawfinding.Params) {
-				p.Title = tt.title
-				p.Confidence = tt.conf
-			})
-
-			f, outcome, err := svc.MatchRawFinding(ctx, rf)
-			if err != nil {
-				t.Fatalf("MatchRawFinding() unexpected error: %v", err)
-			}
-			if outcome != MatchOutcomeHeld {
-				t.Errorf("outcome = %q, want %q", outcome, MatchOutcomeHeld)
-			}
-			if f != nil {
-				t.Errorf("MatchRawFinding() finding = %+v, want nil", f)
+			rf := rawfinding.RawFinding{NativeSeverity: tt.nativeSeverity}
+			if got := severityFromRawFinding(rf); got != tt.want {
+				t.Errorf("severityFromRawFinding(NativeSeverity=%q) = %q, want %q", tt.nativeSeverity, got, tt.want)
 			}
 		})
 	}

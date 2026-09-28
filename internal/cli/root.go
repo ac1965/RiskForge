@@ -17,8 +17,12 @@ var version = "dev"
 // connects to persistence for every command except migrate, which uses
 // migrate directly. newHandler builds the HTTP API handler for `serve`
 // (ADR 0011); cmd/riskforge/main.go supplies internal/api.NewMux so this
-// package never imports internal/api itself.
-func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler HandlerFactory) *cobra.Command {
+// package never imports internal/api itself. normalizePownForge is
+// `scanner import-pownforge`'s PownForge RunRecord parser (ADR 0018/0019);
+// cmd/riskforge/main.go supplies
+// internal/infrastructure/scanner/pownforge.Normalize the same way, so
+// this package never imports internal/infrastructure either.
+func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer) *cobra.Command {
 	root := &cobra.Command{
 		Use:          "riskforge",
 		Short:        "Vulnerability & Exposure Management Platform",
@@ -42,6 +46,7 @@ func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler 
 		newEvidenceCommand(newService),
 		newExceptionCommand(newService),
 		newTokenCommand(newService),
+		newScannerCommand(newService, normalizePownForge),
 		newServeCommand(newService, newHandler),
 	)
 

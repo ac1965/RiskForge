@@ -18,12 +18,13 @@ import (
 	"github.com/ac1965/riskforge/internal/domain/priority"
 	"github.com/ac1965/riskforge/internal/domain/risk"
 	"github.com/ac1965/riskforge/internal/infrastructure/postgres"
+	"github.com/ac1965/riskforge/internal/infrastructure/scanner/pownforge"
 )
 
 const databaseURLEnv = "RISKFORGE_DATABASE_URL"
 
 func main() {
-	if err := cli.NewRootCommand(newService, migrate, api.NewMux).Execute(); err != nil {
+	if err := cli.NewRootCommand(newService, migrate, api.NewMux, pownforge.Normalize).Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

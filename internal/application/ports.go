@@ -48,6 +48,13 @@ type SoftwareRepository interface {
 type VulnerabilityRepository interface {
 	Save(ctx context.Context, v *vulnerability.Vulnerability) error
 	FindByID(ctx context.Context, id vulnerability.ID) (*vulnerability.Vulnerability, error)
+	// FindByCVE is MatchRawFinding's lookup key (ADR 0016) for a RawFinding
+	// the Normalizer classified as ClassificationKnownVulnerability: it
+	// looks for an existing Vulnerability record for the extracted CVE
+	// id. Returns (nil, nil), not an error, when no such Vulnerability is
+	// registered yet -- creating one from scratch is not this port's job
+	// (see ADR 0016 "対象外").
+	FindByCVE(ctx context.Context, cveID string) (*vulnerability.Vulnerability, error)
 	// List returns every Vulnerability, for `riskforge vulnerability list`
 	// and GET /api/v1/vulnerabilities (ADR 0011 flagged this as a gap to
 	// fill when needed, rather than speculatively).

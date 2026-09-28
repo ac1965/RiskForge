@@ -111,6 +111,16 @@ func (r *vulnerabilityRepo) FindByID(_ context.Context, id vulnerability.ID) (*v
 	return &cp, nil
 }
 
+func (r *vulnerabilityRepo) FindByCVE(_ context.Context, cveID string) (*vulnerability.Vulnerability, error) {
+	for _, v := range r.byID {
+		if v.CVEID == cveID {
+			cp := *v
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
 func (r *vulnerabilityRepo) List(_ context.Context) ([]*vulnerability.Vulnerability, error) {
 	out := make([]*vulnerability.Vulnerability, 0, len(r.byID))
 	for _, v := range r.byID {

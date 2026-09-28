@@ -259,6 +259,33 @@ func TestVulnerabilityRepository(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityRepositoryFindByCVE(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	repo := NewVulnerabilityRepository(db)
+
+	v := mustVulnerability(t)
+	if err := repo.Save(ctx, v); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	found, err := repo.FindByCVE(ctx, v.CVEID)
+	if err != nil {
+		t.Fatalf("FindByCVE() unexpected error: %v", err)
+	}
+	if found == nil || found.ID != v.ID {
+		t.Errorf("FindByCVE() = %+v, want vulnerability %s", found, v.ID)
+	}
+
+	missing, err := repo.FindByCVE(ctx, "CVE-2099-99999")
+	if err != nil {
+		t.Fatalf("FindByCVE() for unknown CVE unexpected error: %v", err)
+	}
+	if missing != nil {
+		t.Errorf("FindByCVE() for unknown CVE = %+v, want nil", missing)
+	}
+}
+
 func TestVulnerabilityRepositoryList(t *testing.T) {
 	db := setupDB(t)
 	ctx := context.Background()

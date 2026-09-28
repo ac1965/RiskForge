@@ -761,7 +761,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0002](adr/0002-risk-engine.md) | Risk / Priority Engineの設計 | RiskとPriorityを固定の計算式ではなくProvider/Policyの組み合わせとして実装。`BaselinePolicy`は「唯一の式」ではなく差し替え可能なリファレンス実装の1つ |
 | [0003](adr/0003-remediation-safety.md) | Remediation / Verificationの安全性モデル | `remediation.Plan`のステートマシンが`Proposed→InProgress`の直接遷移を禁止し、承認ゲートをドメインレベルで強制。Verificationの`Inconclusive`はFinding遷移を発生させない |
 | [0004](adr/0004-evidence-model.md) | Evidenceモデル | `evidence.Evidence`は更新用メソッドを持たず、訂正は常に新しいレコードとして追加。`ContentHash`/`Location`の役割を分離 |
-| 0005 | PownForge連携 | 未作成。連携はPhase 5(Integrations)で設計・記録される予定(§20A.10、[第14章](#14-pownforgeとの関係姉妹プロジェクト)参照) |
+| [0005](adr/0005-pownforge-integration.md) | PownForge連携の設計方針 | AGENTS.md §20Aが既に定めている連携制約(外部Scanner扱い、CVEを持たない結果の分類、Evidence参照+ハッシュ引き継ぎ、Remediation/Verificationの責務分離等)をADRとして記録。**連携コードの実装は依然として対象外**(RawFinding自体・Adapter・Normalizer実装・ATT&CK語彙やCVSSフィールドの採用可否は、Phase 5着手時に別ADRで決定する) |
 | [0006](adr/0006-api-routing.md) | APIルーティング | サードパーティルーターを使わず、標準ライブラリの`net/http`+`http.ServeMux`を採用。ルーター導入には新ADRが必要 |
 | [0007](adr/0007-exception-policy-audit.md) | Exception / Policy / Auditのドメインモデル | Exception・Auditは§18/§30のフィールドリストをそのまま実装。汎用的で永続化・バージョン管理されたPolicy集約はあえて作らず、`AutoRemediationPolicy`のみを実装 |
 | [0008](adr/0008-application-layer.md) | Application層: Named APIとports | Repository interfaceを`ports.go`に集約。§26に例示のない`ApproveRemediationPlan`とException操作群を追加。監査対象は§30が明示した8アクションのみに限定 |
@@ -815,8 +815,14 @@ flowchart TD
 この連携はRiskForge側でPhase 5(Integrations)として設計されており、
 **両プロジェクトとも未実装**です。どちらかのPhase実装に便乗して連携
 コードを先行実装しない、という制約はAGENTS.md §20A.10に明記されて
-います。連携仕様の重要な判断は`docs/adr/0005-pownforge-integration.md`
-として記録される想定ですが、本書執筆時点ではまだ作成されていません。
+います。連携仕様の重要な判断は
+[`docs/adr/0005-pownforge-integration.md`](adr/0005-pownforge-integration.md)
+として記録しました(2026-09-28、PownForge側
+[Issue #15](https://github.com/ac1965/PownForge/issues/15)の提案を
+受けてユーザーの明示的な依頼により作成)。このADRはAGENTS.md §20Aが
+既に定めている制約をADR形式にまとめたもので、**連携コードの実装
+そのものは依然として対象外**です(`RawFinding`実装・Adapter実装・
+ATT&CK語彙やCVSSフィールドの採用可否は、Phase 5着手時に別ADRで決定)。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 
@@ -841,9 +847,11 @@ flowchart TD
   対応表はここでは新設せず、Phase 5着手時にPownForge側の整理を出発点
   として参照する想定です。
 - この記録自体は設計判断(ADR記録義務、AGENTS.md §48)には該当しない
-  ため、新規ADRは起票していません。ATT&CKタグの採用方針を実際に決める
-  場合は、`docs/adr/0005-pownforge-integration.md`(Phase 5着手時に作成)
-  または0013以降の番号で別途ADR化してください。
+  ため、新規ADRは起票していません。`docs/adr/0005-pownforge-integration.md`
+  は2026-09-28に作成されましたが、AGENTS.md §20Aの既存制約を記録した
+  ものであり、ATT&CKタグの採用可否自体は決定していません。採用方針を
+  実際に決める場合は、Phase 5着手時に0015以降の番号で別途ADR化して
+  ください。
 
 ## 15. 付録: 用語集
 

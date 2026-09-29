@@ -183,3 +183,21 @@ type APITokenRepository interface {
 type RemediationExecutor interface {
 	Execute(ctx context.Context, plan *remediation.Plan, target remediation.DryRunInput) error
 }
+
+// VulnerabilityLookup fetches authoritative Vulnerability data for a CVE
+// ID from an external source (AGENTS.md §19: NVD/CISA KEV/OSV/vendor
+// advisories) when RiskForge's own catalog has no record for it yet.
+// Optional on Service (a nil VulnerabilityLookup is a valid, supported
+// configuration — see MatchRawFinding's matchKnownVulnerability, ADR
+// 0024): MatchOutcomeUnmatched is still the behavior with no adapter
+// wired in, exactly as before this port existed.
+//
+// LookupCVE returns (nil, nil), not an error, when the source has no
+// record for cveID either — "not found" is not a failure. The returned
+// Params has CVEID already set to cveID (so a later FindByCVE finds the
+// same record instead of re-registering a duplicate) and Provenance
+// identifying the source; it's ready to pass straight to
+// vulnerability.New.
+type VulnerabilityLookup interface {
+	LookupCVE(ctx context.Context, cveID string) (*vulnerability.Params, error)
+}

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -143,6 +144,172 @@ func TestMatchRawFindingUnmatchedWhenVulnerabilityNotRegistered(t *testing.T) {
 	f, outcome, err := svc.MatchRawFinding(ctx, rf)
 	if err != nil {
 		t.Fatalf("MatchRawFinding() unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeUnmatched {
+		t.Errorf("outcome = %q, want %q", outcome, MatchOutcomeUnmatched)
+	}
+	if f != nil {
+		t.Errorf("MatchRawFinding() finding = %+v, want nil", f)
+	}
+}
+
+// fakeVulnerabilityLookup is a test double for application.VulnerabilityLookup
+// (ADR 0024) -- keyed by CVE id, with an optional error to simulate a
+// lookup failure (network error, rate limit, ...) distinctly from "not
+// found".
+type fakeVulnerabilityLookup struct {
+	byCVE map[string]vulnerability.Params
+	err   error
+	calls int
+}
+
+func (f *fakeVulnerabilityLookup) LookupCVE(ctx context.Context, cveID string) (*vulnerability.Params, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	p, ok := f.byCVE[cveID]
+	if !ok {
+		return nil, nil
+	}
+	return &p, nil
+}
+
+// TestMatchRawFindingRegistersFromVulnerabilityLookupWhenNotYetKnown
+// covers ADR 0024: a CVE with no local Vulnerability record is looked up
+// externally, registered, and correlated in the same call.
+func TestMatchRawFindingRegistersFromVulnerabilityLookupWhenNotYetKnown(t *testing.T) {
+	svc, repos := newTestService(t)
+	ctx := context.Background()
+
+	a, err := svc.DiscoverAssets(ctx, testAssetParams(), testAssetParams().FirstSeen)
+	if err != nil {
+		t.Fatalf("DiscoverAssets() unexpected error: %v", err)
+	}
+	score := 9.8
+	svc.VulnerabilityLookup = &fakeVulnerabilityLookup{
+		byCVE: map[string]vulnerability.Params{
+			"CVE-2022-1664": {
+				CVEID:       "CVE-2022-1664",
+				Title:       "CVE-2022-1664",
+				Description: "dpkg directory traversal",
+				Severity:    vulnerability.SeverityCritical,
+				CVSSv3:      &score,
+				PublishedAt: time.Date(2022, 5, 26, 0, 0, 0, 0, time.UTC),
+				Provenance:  vulnerability.Provenance{Source: "nvd", SourceID: "CVE-2022-1664"},
+			},
+		},
+	}
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Title = "[CVE-2022-1664] Dpkg::Source::Archive directory traversal"
+	})
+
+	f, outcome, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeCorrelated {
+		t.Fatalf("outcome = %q, want %q", outcome, MatchOutcomeCorrelated)
+	}
+	if f == nil || f.AssetID != a.ID {
+		t.Errorf("MatchRawFinding() finding = %+v, want a finding for asset %s", f, a.ID)
+	}
+	registered, err := repos.vulnerabilities.FindByCVE(ctx, "CVE-2022-1664")
+	if err != nil || registered == nil {
+		t.Fatalf("FindByCVE() after lookup-registration = %v, %v, want a saved record", registered, err)
+	}
+	if registered.Severity != vulnerability.SeverityCritical {
+		t.Errorf("registered Severity = %q, want critical", registered.Severity)
+	}
+}
+
+// TestMatchRawFindingLookupIsIdempotentAcrossRepeatedDetections confirms a
+// second RawFinding for the same CVE reuses the Vulnerability the first
+// call's lookup registered, rather than looking it up (and registering a
+// duplicate) again.
+func TestMatchRawFindingLookupIsIdempotentAcrossRepeatedDetections(t *testing.T) {
+	svc, repos := newTestService(t)
+	ctx := context.Background()
+
+	a, err := svc.DiscoverAssets(ctx, testAssetParams(), testAssetParams().FirstSeen)
+	if err != nil {
+		t.Fatalf("DiscoverAssets() unexpected error: %v", err)
+	}
+	lookup := &fakeVulnerabilityLookup{
+		byCVE: map[string]vulnerability.Params{
+			"CVE-2022-1664": {
+				CVEID: "CVE-2022-1664", Title: "CVE-2022-1664", Severity: vulnerability.SeverityCritical,
+			},
+		},
+	}
+	svc.VulnerabilityLookup = lookup
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Title = "[CVE-2022-1664] first detection"
+	})
+	if _, _, err := svc.MatchRawFinding(ctx, rf); err != nil {
+		t.Fatalf("MatchRawFinding() first call unexpected error: %v", err)
+	}
+
+	rf2 := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.AssetID = a.ID
+		p.Title = "[CVE-2022-1664] second detection"
+		p.CollectedAt = rf.CollectedAt.Add(48 * time.Hour)
+	})
+	if _, outcome, err := svc.MatchRawFinding(ctx, rf2); err != nil || outcome != MatchOutcomeCorrelated {
+		t.Fatalf("MatchRawFinding() second call = outcome %q, err %v, want correlated, nil", outcome, err)
+	}
+
+	if lookup.calls != 1 {
+		t.Errorf("VulnerabilityLookup.LookupCVE was called %d times, want 1 (second call should find the registered record via FindByCVE first)", lookup.calls)
+	}
+	if len(repos.vulnerabilities.byID) != 1 {
+		t.Errorf("vulnerability repository has %d records, want 1 (no duplicate registration)", len(repos.vulnerabilities.byID))
+	}
+}
+
+// TestMatchRawFindingUnmatchedWhenLookupFindsNothingEither confirms the
+// pre-ADR-0024 fallback still applies when a VulnerabilityLookup is
+// configured but genuinely has no record for the CVE.
+func TestMatchRawFindingUnmatchedWhenLookupFindsNothingEither(t *testing.T) {
+	svc, _ := newTestService(t)
+	svc.VulnerabilityLookup = &fakeVulnerabilityLookup{byCVE: map[string]vulnerability.Params{}}
+	ctx := context.Background()
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.Title = "[CVE-2099-99999] not in local catalog or NVD"
+	})
+
+	f, outcome, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() unexpected error: %v", err)
+	}
+	if outcome != MatchOutcomeUnmatched {
+		t.Errorf("outcome = %q, want %q", outcome, MatchOutcomeUnmatched)
+	}
+	if f != nil {
+		t.Errorf("MatchRawFinding() finding = %+v, want nil", f)
+	}
+}
+
+// TestMatchRawFindingUnmatchedWhenLookupItselfFails confirms a lookup
+// error (network failure, rate limit, ...) degrades to unmatched rather
+// than failing the whole MatchRawFinding call (ADR 0024 "対象外").
+func TestMatchRawFindingUnmatchedWhenLookupItselfFails(t *testing.T) {
+	svc, _ := newTestService(t)
+	svc.VulnerabilityLookup = &fakeVulnerabilityLookup{err: fmt.Errorf("nvd: rate limited")}
+	ctx := context.Background()
+
+	rf := mustRawFinding(t, func(p *rawfinding.Params) {
+		p.Title = "[CVE-2022-1664] lookup will fail"
+	})
+
+	f, outcome, err := svc.MatchRawFinding(ctx, rf)
+	if err != nil {
+		t.Fatalf("MatchRawFinding() unexpected error (lookup failure should degrade gracefully): %v", err)
 	}
 	if outcome != MatchOutcomeUnmatched {
 		t.Errorf("outcome = %q, want %q", outcome, MatchOutcomeUnmatched)

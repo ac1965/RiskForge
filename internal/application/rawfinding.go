@@ -63,16 +63,25 @@ func (s *Service) MatchRawFinding(ctx context.Context, rf rawfinding.RawFinding)
 }
 
 // matchKnownVulnerability handles AGENTS.md §20A.2 case 1: rf named a CVE.
-// Creating a new Vulnerability record when that CVE has no existing record
-// yet is deliberately out of scope (ADR 0016 "対象外") -- see
-// MatchOutcomeUnmatched.
+// When no Vulnerability record for it exists yet, ADR 0016 originally left
+// that entirely out of scope (always MatchOutcomeUnmatched). ADR 0024
+// extends it: if a VulnerabilityLookup is configured (optional, nil by
+// default), it is tried before giving up, so a CVE RiskForge's own catalog
+// has never seen can still be auto-registered from an external source
+// (e.g. NVD) and correlated in the same call.
 func (s *Service) matchKnownVulnerability(ctx context.Context, rf rawfinding.RawFinding, cveID string) (*finding.Finding, MatchOutcome, error) {
 	v, err := s.Vulnerabilities.FindByCVE(ctx, cveID)
 	if err != nil {
 		return nil, "", fmt.Errorf("application: find vulnerability by cve %s: %w", cveID, err)
 	}
 	if v == nil {
-		return nil, MatchOutcomeUnmatched, nil
+		v, err = s.lookupAndRegisterVulnerability(ctx, cveID)
+		if err != nil {
+			return nil, "", err
+		}
+		if v == nil {
+			return nil, MatchOutcomeUnmatched, nil
+		}
 	}
 
 	f, err := s.correlateRawFinding(ctx, rf, v.ID)
@@ -80,6 +89,38 @@ func (s *Service) matchKnownVulnerability(ctx context.Context, rf rawfinding.Raw
 		return nil, "", err
 	}
 	return f, MatchOutcomeCorrelated, nil
+}
+
+// lookupAndRegisterVulnerability tries s.VulnerabilityLookup (ADR 0024)
+// for cveID and, if found, registers it. Returns (nil, nil) -- not an
+// error -- both when no VulnerabilityLookup is configured and when the
+// external source itself has no record for cveID either, so the caller
+// treats both the same way (fall back to MatchOutcomeUnmatched).
+//
+// A genuine lookup failure (network error, rate limit, malformed
+// response, ...) is deliberately also downgraded to (nil, nil) rather
+// than failing the whole import: a Scanner import processes many
+// RawFindings in one call (AGENTS.md §20), and one flaky external
+// request must not abort findings that have nothing to do with it (ADR
+// 0024 "対象外" -- distinguishing "not found" from "lookup failed" in the
+// outcome itself is left for later if it turns out to matter).
+func (s *Service) lookupAndRegisterVulnerability(ctx context.Context, cveID string) (*vulnerability.Vulnerability, error) {
+	if s.VulnerabilityLookup == nil {
+		return nil, nil
+	}
+	params, err := s.VulnerabilityLookup.LookupCVE(ctx, cveID)
+	if err != nil || params == nil {
+		return nil, nil
+	}
+
+	v, err := vulnerability.New(*params)
+	if err != nil {
+		return nil, fmt.Errorf("application: register vulnerability looked up for cve %s: %w", cveID, err)
+	}
+	if err := s.Vulnerabilities.Save(ctx, v); err != nil {
+		return nil, fmt.Errorf("application: save vulnerability looked up for cve %s: %w", cveID, err)
+	}
+	return v, nil
 }
 
 // matchUnknownVulnerability handles AGENTS.md §20A.2 case 2: rf describes a

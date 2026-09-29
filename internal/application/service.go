@@ -29,6 +29,12 @@ type Service struct {
 
 	RiskEngine     *risk.Engine
 	PriorityEngine *priority.Engine
+
+	// VulnerabilityLookup is optional (nil is valid and is the default
+	// configuration): unlike every port above, NewService does not
+	// require it. See the port's own doc comment (ports.go) and ADR
+	// 0024.
+	VulnerabilityLookup VulnerabilityLookup
 }
 
 // NewService validates that every dependency of deps is set and returns

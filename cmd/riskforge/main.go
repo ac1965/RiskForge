@@ -17,11 +17,23 @@ import (
 	"github.com/ac1965/riskforge/internal/cli"
 	"github.com/ac1965/riskforge/internal/domain/priority"
 	"github.com/ac1965/riskforge/internal/domain/risk"
+	"github.com/ac1965/riskforge/internal/infrastructure/datasource/nvd"
 	"github.com/ac1965/riskforge/internal/infrastructure/postgres"
 	"github.com/ac1965/riskforge/internal/infrastructure/scanner/pownforge"
 )
 
 const databaseURLEnv = "RISKFORGE_DATABASE_URL"
+
+// nvdLookupEnabledEnv opts into MatchRawFinding calling out to the real
+// NVD CVE API for a CVE it doesn't have a local Vulnerability record for
+// yet (ADR 0024). Off by default: this makes outbound network calls
+// during `scanner import-pownforge`/HTTP import, which an operator should
+// choose explicitly rather than have happen silently.
+const nvdLookupEnabledEnv = "RISKFORGE_NVD_LOOKUP_ENABLED"
+
+// nvdAPIKeyEnv is optional -- NVD allows unauthenticated access at a
+// lower rate limit; setting this raises it (see nvd.Client).
+const nvdAPIKeyEnv = "RISKFORGE_NVD_API_KEY"
 
 func main() {
 	if err := cli.NewRootCommand(newService, migrate, api.NewMux, pownforge.Normalize, pownforge.Fetch, pownforge.ExtractEvidence).Execute(); err != nil {
@@ -89,22 +101,23 @@ func newService() (*application.Service, func() error, error) {
 	}
 
 	svc, err := application.NewService(application.Service{
-		Assets:            postgres.NewAssetRepository(db),
-		Software:          postgres.NewSoftwareRepository(db),
-		Vulnerabilities:   postgres.NewVulnerabilityRepository(db),
-		RawFindings:       postgres.NewRawFindingRepository(db),
-		Findings:          postgres.NewFindingRepository(db),
-		RiskAssessments:   postgres.NewRiskAssessmentRepository(db),
-		PriorityDecisions: postgres.NewPriorityDecisionRepository(db),
-		RemediationPlans:  postgres.NewRemediationPlanRepository(db),
-		Verifications:     postgres.NewVerificationRepository(db),
-		Evidence:          postgres.NewEvidenceRepository(db),
-		Exceptions:        postgres.NewExceptionRepository(db),
-		Audit:             postgres.NewAuditRepository(db),
-		Principals:        postgres.NewPrincipalRepository(db),
-		APITokens:         postgres.NewAPITokenRepository(db),
-		RiskEngine:        riskEngine,
-		PriorityEngine:    priorityEngine,
+		Assets:              postgres.NewAssetRepository(db),
+		Software:            postgres.NewSoftwareRepository(db),
+		Vulnerabilities:     postgres.NewVulnerabilityRepository(db),
+		RawFindings:         postgres.NewRawFindingRepository(db),
+		Findings:            postgres.NewFindingRepository(db),
+		RiskAssessments:     postgres.NewRiskAssessmentRepository(db),
+		PriorityDecisions:   postgres.NewPriorityDecisionRepository(db),
+		RemediationPlans:    postgres.NewRemediationPlanRepository(db),
+		Verifications:       postgres.NewVerificationRepository(db),
+		Evidence:            postgres.NewEvidenceRepository(db),
+		Exceptions:          postgres.NewExceptionRepository(db),
+		Audit:               postgres.NewAuditRepository(db),
+		Principals:          postgres.NewPrincipalRepository(db),
+		APITokens:           postgres.NewAPITokenRepository(db),
+		RiskEngine:          riskEngine,
+		PriorityEngine:      priorityEngine,
+		VulnerabilityLookup: newVulnerabilityLookup(),
 	})
 	if err != nil {
 		db.Close()
@@ -112,4 +125,14 @@ func newService() (*application.Service, func() error, error) {
 	}
 
 	return svc, db.Close, nil
+}
+
+// newVulnerabilityLookup returns an NVD-backed application.VulnerabilityLookup
+// (ADR 0024) when nvdLookupEnabledEnv is set, or nil (disabled, the
+// pre-ADR-0024 default) otherwise.
+func newVulnerabilityLookup() application.VulnerabilityLookup {
+	if os.Getenv(nvdLookupEnabledEnv) == "" {
+		return nil
+	}
+	return nvd.NewClient(os.Getenv(nvdAPIKeyEnv))
 }

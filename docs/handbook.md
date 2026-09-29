@@ -715,7 +715,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用7エンドポイント+Exception書き込み・トークン認証) / Dashboard(一覧+Exception承認UI+KPI一部) | Risk/Priority Engine、読み取り専用HTTP API(当初5エンドポイント、[ADR 0011](adr/0011-http-api-design.md)、P0-2。ADR 0011自身がギャップとして残した`vulnerabilities`/`verifications`も、KPIフェーズBの前提として追加し計7エンドポイントに拡張)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)、Exceptionワークフローの書き込み系([ADR 0014](adr/0014-exception-write-endpoints.md)、P0-3第一弾)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))は5リソースの一覧表示に加え、Exceptions一覧の承認操作ボタン(ADR 0014呼び出し)、OverviewタブでのKPI一部(既存一覧エンドポイントだけで計算できる範囲)まで実装済み。KPI集計の残り(Critical Findings等)はバックエンドのエンドポイントは揃ったがDashboard側でまだ使っていない。Remediationの書き込み系・Dashboardの詳細画面は未着手 |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
-| Phase 5 | Automation / AI assistance / Integrations | PownForge連携([ADR 0015](adr/0015-rawfinding-domain-model.md)〜[0022](adr/0022-pownforge-evidence-bridging.md)、第14章)はScanner→RawFinding→Normalizer→Matcher→Adapter→CLI/HTTP取り込みまで実装済み。NVD/KEV/OSV Data Source Adapter、AI assistanceは未着手 |
+| Phase 5 | Automation / AI assistance / Integrations | PownForge連携([ADR 0015](adr/0015-rawfinding-domain-model.md)〜[0023](adr/0023-pownforge-result-sha256-content-hash.md)、第14章)はScanner→RawFinding→Normalizer→Matcher→Adapter→CLI/HTTP取り込みまで実装済み。NVD Data Source Adapter([ADR 0024](adr/0024-nvd-vulnerability-lookup.md)、オンデマンド単一CVEルックアップのみ)も実装済み。CISA KEV/OSV Adapter、AI assistanceは未着手 |
 
 具体的に未実装なもの:
 
@@ -737,14 +737,16 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   P0-3はExceptionワークフローのみを先に実装し([ADR 0014](adr/0014-exception-write-endpoints.md))、
   Dry Run・`riskforge-worker`との実行権限分離をHTTP層でどう表現するかを
   含めて別ADRに意図的に先送りしている
-- `internal/infrastructure/datasource`: NVD/CISA KEV/OSV等のAdapter
-  インターフェースの説明のみ。実装はまだない(§19)。2026-09-30の実機PoC
+- `internal/infrastructure/datasource`: NVDのみ実装済み
+  ([`datasource/nvd`](adr/0024-nvd-vulnerability-lookup.md)、
+  2026-09-30。オンデマンドの単一CVEルックアップのみ、既定無効・
+  `RISKFORGE_NVD_LOOKUP_ENABLED`で有効化)。CISA KEV/OSV等は引き続き
+  未実装(§19)。2026-09-30の実機PoC
   ([§14.0.1](#1401-実機poc-pownforgeの検知是正再検証をremediationワークフローで完結2026-09-30))
   で、これが無いと`known_vulnerability`分類のRawFinding(CVEを持つが
-  未登録)は`unmatched`のまま何もFindingを作れないことを確認した
-  (回避策として`vulnerability add`での手動登録が要る)。単なる「カタログ
-  を自動で埋める便利機能」ではなく、PownForge連携でCVE付きの検知結果を
-  実際にFinding化するための実質的な前提条件だと判明した
+  未登録)は`unmatched`のまま何もFindingを作れないことが判明し(単なる
+  「カタログを自動で埋める便利機能」ではなく実質的な前提条件)、NVD分の
+  みADR 0024で解決した
 - `riskforge-agent` / `riskforge-worker`: バイナリの骨格のみで、
   実行すると "not implemented yet" を返す
 - `application.RemediationExecutor`の実装: `internal/cli`の
@@ -788,6 +790,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0021](adr/0021-pownforge-http-api-endpoint.md) | `POST /api/v1/scanner/pownforge-import`: HTTP APIエンドポイント(PownForge連携 第七弾) | 新スコープ`scanner:import`を追加し、CLIと同じ`RunRecord`/`PownForgeURL`+`RunID`/`AssetID`/`Target`の相互排他バリデーションをHTTP側にも実装。`internal/api`も`internal/infrastructure`を直接importしない制約のため、`NewMux`/`HandlerFactory`のシグネチャに無名の生の関数型を使う(名前付き関数型は宣言そのものが異なると代入不可なため)。`internal/api`の既存フェイクがstatelessでMatchRawFindingの前提を満たせず、`statefulAssetsRepo`/`statefulVulnerabilitiesRepo`を新設。実PostgreSQL+実際に起動した`riskforge serve`への実機検証(認証401・スコープ不足403・相互排他400含む)を実施 |
 | [0022](adr/0022-pownforge-evidence-bridging.md) | Evidenceの橋渡し(PownForge連携 第八弾、最終) | `ExtractEvidence`(PownForgeの`RunRecord.evidence`から`ContentHash`は`stdout_sha256`を使用、`Location`は呼び出し元が埋める設計)、`Normalize`に`evidenceID`引数を追加。CLIはファイルパス/fetch URLからLocationを自動導出、HTTP APIのembeddedモードのみ`Location`必須(呼び出し元しか出所を知らないため)。`--skip-evidence`/`SkipEvidence`で無効化可能。実PostgreSQL+実際の`pownforge scan nuclei`実行結果を取り込み、Content Hashが本物のstdout_sha256と完全一致することを実機確認。これでユーザー依頼の4点(fetch・target解決・HTTP API・Evidence橋渡し)が全て完了(**2026-09-30、ADR 0023によりstdout_sha256の選択は上書きされた**) |
 | [0023](adr/0023-pownforge-result-sha256-content-hash.md) | Evidence ContentHashをresult_sha256優先に変更 | 実機PoC第2弾で、`container`(trivy)のようにファイル出力するプラグインでは`stdout_sha256`が常に空文字列のハッシュになり改ざん検知が機能しないことが判明。PownForge側に追加された`Evidence.result_sha256`(プラグインの正規化済み結果のハッシュ、I/O方式に非依存)を優先し、無ければ`stdout_sha256`にフォールバックするよう`ExtractEvidence`を変更。実際のPownForge `container`実行結果を取り込み、Content Hashが本物の`result_sha256`と完全一致することを実機確認 |
+| [0024](adr/0024-nvd-vulnerability-lookup.md) | NVD Vulnerability Lookup(オンデマンドのVulnerability自動登録) | `internal/infrastructure/datasource/nvd`(NVD CVE API 2.0)を新設し、`application.VulnerabilityLookup`(任意port、既定`nil`)経由で`MatchRawFinding`に接続。`FindByCVE`が見つけられないCVEを、設定時のみその場でNVDに1件問い合わせ、見つかれば自動登録して`correlated`。バルク同期・レート制限のリトライは対象外。既定で無効、`RISKFORGE_NVD_LOOKUP_ENABLED`で明示的に有効化。実機PoC(§14.0.1のbefore-run再取り込み)で、未認証レート制限に達するまでに11件のVulnerabilityが実際にNVDから自動登録されFinding化されることを確認 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -956,10 +959,17 @@ RawFinding、[§20A.2](../AGENTS.md#20a-pownforge-integration))は、
 のみ**`correlated`してFindingが作られる。`unknown_vulnerability`の
 自動登録([ADR 0017](adr/0017-unknown-vulnerability-registration.md))は
 CVEを持たないRawFinding専用で、CVEを持つが未登録のRawFindingは
-`unmatched`のまま何も作られない。カタログを埋めるNVD/KEV/OSV Data
-Source Adapter([§12](#12-実装状況))が未実装のため、このPoCでは
-`riskforge vulnerability add --cve-id CVE-2022-1664 ...`で対象の
-Vulnerabilityを1件手動登録してから取り込んだ。
+`unmatched`のまま何も作られない。この実機PoC実施時点ではカタログを
+埋めるData Source Adapterが未実装だったため、`riskforge vulnerability
+add --cve-id CVE-2022-1664 ...`で対象のVulnerabilityを1件手動登録して
+から取り込んだ。**この制約への対応(2026-09-30、[ADR
+0024](adr/0024-nvd-vulnerability-lookup.md))**: `internal/infrastructure/datasource/nvd`
+(NVD CVE API 2.0のオンデマンド単一CVEルックアップ)を追加し、
+`RISKFORGE_NVD_LOOKUP_ENABLED=1`で有効化した状態で同じbefore-runを
+再取り込みしたところ、手動登録した1件に加えて**11件のVulnerabilityが
+実際にNVDから自動登録**され、対応するFindingも生成された(未認証の
+NVDレート制限(5リクエスト/30秒)により、83件中この11件で制限に到達し
+残りは設計どおり`unmatched`にフォールバックした)。
 
 **手順と実機確認結果**:
 1. `riskforge scanner import-pownforge <before-run>.json --target

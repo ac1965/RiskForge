@@ -31,6 +31,12 @@ const (
 	ScopeExceptionApprove = "exception:approve"
 )
 
+// ScopeScannerImport gates POST /api/v1/scanner/pownforge-import (ADR
+// 0021): ingesting a Scanner's results is a write of RawFinding/
+// Vulnerability/Finding records, so it gets its own scope rather than
+// piggybacking on ScopeRead.
+const ScopeScannerImport = "scanner:import"
+
 // APIToken is a bearer credential belonging to a Principal (ADR 0012).
 // Only its SHA-256 hash (TokenHash, see HashToken) is ever held here or
 // persisted — the raw token exists only at issuance time, in the CLI

@@ -77,7 +77,7 @@ func newTokenCreateCommand(newService ServiceFactory) *cobra.Command {
 	// the Dashboard or another automated caller, not a human sitting at
 	// this terminal (who would use --kind human).
 	flags.StringVar(&kind, "kind", string(authn.KindService), "principal kind when a new principal is created: human or service")
-	flags.StringSliceVar(&scopes, "scope", []string{authn.ScopeRead}, "scopes to grant this token (comma-separated): read, exception:request, exception:approve (ADR 0012/0014)")
+	flags.StringSliceVar(&scopes, "scope", []string{authn.ScopeRead}, "scopes to grant this token (comma-separated): read, exception:request, exception:approve, scanner:import (ADR 0012/0014/0021)")
 	flags.DurationVar(&expiresIn, "expires-in", 0, "how long until the token expires, e.g. 720h for 30 days; 0 means it never expires on its own (still revocable)")
 	_ = cmd.MarkFlagRequired("principal")
 

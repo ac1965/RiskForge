@@ -6,23 +6,42 @@ import (
 	"net/http"
 
 	"github.com/ac1965/riskforge/internal/application"
+	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/authn"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
 // NewMux builds the HTTP API: the read-only GET endpoints decided by
 // ADR 0011 (P0-2, the original 5) plus vulnerabilities/verifications
 // (added when the Dashboard's KPI work actually needed them — ADR 0011
 // itself flagged these as a deliberate, not-yet-necessary gap), all
-// gated by RequireScope's "read" scope (ADR 0012), plus the Exception
-// write endpoints decided by ADR 0014 (P0-3's first slice), gated by
-// "exception:request"/"exception:approve". It is the package's only
-// exported entry point for building the handler; individual handlers
-// and the JSON encode/decode helpers stay unexported.
-func NewMux(svc *application.Service) http.Handler {
+// gated by RequireScope's "read" scope (ADR 0012), the Exception write
+// endpoints decided by ADR 0014 (P0-3's first slice), gated by
+// "exception:request"/"exception:approve", and
+// POST /api/v1/scanner/pownforge-import (ADR 0021), gated by
+// "scanner:import". It is the package's only exported entry point for
+// building the handler; individual handlers and the JSON encode/decode
+// helpers stay unexported.
+//
+// normalizePownForge/fetchPownForge are declared with their raw,
+// unnamed function type here (not the PownForgeNormalizer/PownForgeFetcher
+// aliases scanner.go uses internally) on purpose: internal/cli's
+// HandlerFactory (serve.go) must stay assignable from this exact
+// signature without internal/cli importing this package's named types
+// (ADR 0011's existing "internal/cli never imports internal/api"
+// boundary) — two distinctly-named function types with identical
+// underlying signatures are not interchangeable at a call boundary,
+// only structurally identical unnamed ones are.
+func NewMux(
+	svc *application.Service,
+	normalizePownForge func(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error),
+	fetchPownForge func(ctx context.Context, baseURL, runID string) ([]byte, error),
+) http.Handler {
 	mux := http.NewServeMux()
 	requireRead := RequireScope(svc, authn.ScopeRead)
 	requireExceptionRequest := RequireScope(svc, authn.ScopeExceptionRequest)
 	requireExceptionApprove := RequireScope(svc, authn.ScopeExceptionApprove)
+	requireScannerImport := RequireScope(svc, authn.ScopeScannerImport)
 
 	mux.Handle("GET /api/v1/assets", requireRead(handleList(svc.ListAssets)))
 	mux.Handle("GET /api/v1/findings", requireRead(handleList(svc.ListFindings)))
@@ -37,6 +56,8 @@ func NewMux(svc *application.Service) http.Handler {
 	mux.Handle("POST /api/v1/exceptions/{id}/reject", requireExceptionApprove(handleRejectException(svc)))
 	mux.Handle("POST /api/v1/exceptions/{id}/expire", requireExceptionApprove(handleExpireException(svc)))
 	mux.Handle("POST /api/v1/exceptions/{id}/revoke", requireExceptionApprove(handleRevokeException(svc)))
+
+	mux.Handle("POST /api/v1/scanner/pownforge-import", requireScannerImport(handleImportPownForge(svc, normalizePownForge, fetchPownForge)))
 
 	return mux
 }

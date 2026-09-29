@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,14 +10,24 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ac1965/riskforge/internal/application"
+	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
 // HandlerFactory builds the HTTP API handler from a ready
 // application.Service. cmd/riskforge/main.go supplies internal/api.NewMux
 // here, so internal/cli never imports internal/api directly (ADR 0011):
 // internal/cli depends only on net/http (standard library) and
-// internal/application.
-type HandlerFactory func(*application.Service) http.Handler
+// internal/application. The second/third parameters use the same raw,
+// unnamed function type PownForgeNormalizer/PownForgeFetcher alias in
+// scanner.go (ADR 0018/0020) -- see api.NewMux's doc comment (ADR 0021)
+// for why this signature must stay the literal unnamed type rather than
+// referencing either package's named alias.
+type HandlerFactory func(
+	*application.Service,
+	func(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error),
+	func(ctx context.Context, baseURL, runID string) ([]byte, error),
+) http.Handler
 
 // newServeCommand adds `riskforge serve`, exposing the HTTP API decided
 // by ADR 0011 (P0-2, read-only) and ADR 0014 (P0-3, the Exception
@@ -27,7 +38,7 @@ type HandlerFactory func(*application.Service) http.Handler
 // a TLS-terminating reverse proxy sitting in front, with this command
 // itself still bound to localhost) is refused outright rather than left
 // as a foot-gun.
-func newServeCommand(newService ServiceFactory, newHandler HandlerFactory) *cobra.Command {
+func newServeCommand(newService ServiceFactory, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher) *cobra.Command {
 	var addr, tlsCert, tlsKey string
 
 	cmd := &cobra.Command{
@@ -57,7 +68,7 @@ func newServeCommand(newService ServiceFactory, newHandler HandlerFactory) *cobr
 			if err != nil {
 				return fmt.Errorf("serve: listen on %s: %w", addr, err)
 			}
-			server := &http.Server{Handler: newHandler(svc)}
+			server := &http.Server{Handler: newHandler(svc, normalizePownForge, fetchPownForge)}
 
 			if tlsEnabled {
 				fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (bearer-token auth required, TLS)\n", ln.Addr())

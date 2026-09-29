@@ -47,7 +47,7 @@ func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler 
 		newExceptionCommand(newService),
 		newTokenCommand(newService),
 		newScannerCommand(newService, normalizePownForge, fetchPownForge),
-		newServeCommand(newService, newHandler),
+		newServeCommand(newService, newHandler, normalizePownForge, fetchPownForge),
 	)
 
 	return root

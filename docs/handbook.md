@@ -777,6 +777,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0018](adr/0018-pownforge-adapter-and-unclassified-persistence.md) | Adapter(normalize)とunclassifiedケースの永続化(PownForge連携 第四弾) | `RawFindingRepository`+`raw_findings`テーブルを新設し、`unclassified`ケース(§20A.2ケース3)を実際に「保留」として永続化。`internal/infrastructure/scanner/pownforge`(新設)の`Normalize`が、PownForgeの実際のソースコード(`finding.py`/`evidence.py`)のフィールド名で確認したRunRecord JSON形状をRawFindingへ変換。`status="false-positive"`は除外、Confidenceは`(source, status)`からマッピング。`fetch()`/`validate()`/`store()`のCLI・HTTP配線、target名→asset.IDの解決は次のADRに先送り。実装中にADR 0015のEvidence.SourceRefがマイグレーション・Postgres実装に配線されていない漏れを発見し、副次的に修正(migration 000015) |
 | [0019](adr/0019-pownforge-cli-ingestion.md) | `riskforge scanner import-pownforge`: fetch()とCLI配線(PownForge連携 第五弾) | `internal/cli`が`internal/infrastructure`に直接依存できない制約に対し、`ServiceFactory`/`HandlerFactory`と同じ関数注入パターン(`PownForgeNormalizer`)で解決。`fetch()`はPownForgeが事前にエクスポートしたJSONファイルを読む最も単純な形とし、`--asset`は既存asset.IDを直接受け取る(target名の自動解決はしない、`finding correlate --asset`と同じ流儀)。`internal/cli`の既存方針どおり単体テストは追加せず、実PostgreSQL(`docker compose`)に対する実機検証(false-positive除外、unmatched→correlatedへの遷移、再取り込みでのidempotency)で確認 |
 | [0020](adr/0020-pownforge-network-fetch-and-target-resolution.md) | ネットワーク経由fetchとtarget名の自動解決(PownForge連携 第六弾) | `Fetch`(実際の`GET /api/runs/{run_id}`へのHTTP GET、実PownForgeプロセスに対する実機検証込み)、`--target`による`discover_assets()`経由のAsset自動解決(`asset discover`と同じ既定値。実機検証で`asset.New`のType必須検証に引っかかるバグを発見し修正)、`<file>`と`--pownforge-url`/`--run-id`の相互排他制御を追加。HTTP APIエンドポイント・Evidenceの橋渡しは別ADRに先送り |
+| [0021](adr/0021-pownforge-http-api-endpoint.md) | `POST /api/v1/scanner/pownforge-import`: HTTP APIエンドポイント(PownForge連携 第七弾) | 新スコープ`scanner:import`を追加し、CLIと同じ`RunRecord`/`PownForgeURL`+`RunID`/`AssetID`/`Target`の相互排他バリデーションをHTTP側にも実装。`internal/api`も`internal/infrastructure`を直接importしない制約のため、`NewMux`/`HandlerFactory`のシグネチャに無名の生の関数型を使う(名前付き関数型は宣言そのものが異なると代入不可なため)。`internal/api`の既存フェイクがstatelessでMatchRawFindingの前提を満たせず、`statefulAssetsRepo`/`statefulVulnerabilitiesRepo`を新設。実PostgreSQL+実際に起動した`riskforge serve`への実機検証(認証401・スコープ不足403・相互排他400含む)を実施 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -898,6 +899,18 @@ Scanner→RawFinding→Normalizer→Matcher→CLI取り込みまでが実際に�
 バグ(`asset discover`の既定値を埋め忘れていた)を発見・修正した。
 HTTP API側のエンドポイント・Evidenceの橋渡し・ATT&CK/CVSSフィールドの
 最終採用可否は、引き続き未実装のままである。
+
+続けて[ADR 0021](adr/0021-pownforge-http-api-endpoint.md)として、
+`POST /api/v1/scanner/pownforge-import`を実装した(2026-09-29)。新スコープ
+`scanner:import`を新設し、CLIと同じ入力の相互排他バリデーションを
+HTTP側にも実装した。実装中に、`internal/api`も`internal/cli`と同じ
+「`internal/infrastructure`を直接importしない」制約を受けることが
+分かり、`NewMux`/`HandlerFactory`のシグネチャを無名の関数型にすることで
+解決した(名前付き関数型は宣言そのものが異なると代入不可なため)。
+実PostgreSQL+実際に起動した`riskforge serve`プロセスに対する実機検証
+(トークン無し401、スコープ不足403、入力の相互排他違反400)を実施した。
+Evidenceの橋渡し・ATT&CK/CVSSフィールドの最終採用可否は、引き続き
+未実装のままである。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

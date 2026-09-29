@@ -172,6 +172,7 @@ const (
 	testRawTokenWrongScope         = "rf_test-token-without-read-scope"
 	testRawTokenExceptionRequester = "rf_test-token-exception-request-scope"
 	testRawTokenExceptionApprover  = "rf_test-token-exception-approve-scope"
+	testRawTokenScannerImport      = "rf_test-token-scanner-import-scope"
 	testExceptionRequesterName     = "requester"
 	testExceptionApproverName      = "approver"
 )
@@ -180,6 +181,7 @@ var (
 	testPrincipalID                 = authn.NewPrincipalID()
 	testExceptionRequesterPrincipal = authn.NewPrincipalID()
 	testExceptionApproverPrincipal  = authn.NewPrincipalID()
+	testScannerImportPrincipal      = authn.NewPrincipalID()
 )
 
 type principalsFake struct{}
@@ -193,6 +195,8 @@ func (principalsFake) FindByID(_ context.Context, id authn.PrincipalID) (*authn.
 		return &authn.Principal{ID: testExceptionRequesterPrincipal, Name: testExceptionRequesterName, Kind: authn.KindHuman, CreatedAt: time.Now()}, nil
 	case testExceptionApproverPrincipal:
 		return &authn.Principal{ID: testExceptionApproverPrincipal, Name: testExceptionApproverName, Kind: authn.KindHuman, CreatedAt: time.Now()}, nil
+	case testScannerImportPrincipal:
+		return &authn.Principal{ID: testScannerImportPrincipal, Name: "scanner-importer", Kind: authn.KindService, CreatedAt: time.Now()}, nil
 	default:
 		return nil, nil
 	}
@@ -229,6 +233,11 @@ func (apiTokensFake) FindByTokenHash(_ context.Context, hash string) (*authn.API
 			ID: authn.NewTokenID(), PrincipalID: testExceptionApproverPrincipal,
 			TokenHash: hash, Scopes: []string{authn.ScopeExceptionApprove}, CreatedAt: time.Now(),
 		}, nil
+	case authn.HashToken(testRawTokenScannerImport):
+		return &authn.APIToken{
+			ID: authn.NewTokenID(), PrincipalID: testScannerImportPrincipal,
+			TokenHash: hash, Scopes: []string{authn.ScopeScannerImport}, CreatedAt: time.Now(),
+		}, nil
 	default:
 		return nil, nil
 	}
@@ -242,15 +251,17 @@ func (apiTokensFake) List(context.Context) ([]*authn.APIToken, error) { return n
 // finds it again), unlike the static items/err fakes the read-only list
 // tests use.
 type testServiceFakes struct {
-	assets            assetsFake
-	findings          findingsFake
-	priorityDecisions priorityDecisionsFake
-	remediationPlans  remediationPlansFake
-	exceptions        exceptionsFake
-	vulnerabilities   vulnerabilitiesFake
-	verifications     verificationsFake
-	findingsRepo      application.FindingRepository
-	exceptionsRepo    application.ExceptionRepository
+	assets              assetsFake
+	findings            findingsFake
+	priorityDecisions   priorityDecisionsFake
+	remediationPlans    remediationPlansFake
+	exceptions          exceptionsFake
+	vulnerabilities     vulnerabilitiesFake
+	verifications       verificationsFake
+	findingsRepo        application.FindingRepository
+	exceptionsRepo      application.ExceptionRepository
+	assetsRepo          application.AssetRepository
+	vulnerabilitiesRepo application.VulnerabilityRepository
 }
 
 func newTestService(t *testing.T, f testServiceFakes) *application.Service {
@@ -289,11 +300,19 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 	if f.exceptionsRepo != nil {
 		exceptions = f.exceptionsRepo
 	}
+	var assets application.AssetRepository = f.assets
+	if f.assetsRepo != nil {
+		assets = f.assetsRepo
+	}
+	var vulnerabilities application.VulnerabilityRepository = f.vulnerabilities
+	if f.vulnerabilitiesRepo != nil {
+		vulnerabilities = f.vulnerabilitiesRepo
+	}
 
 	svc, err := application.NewService(application.Service{
-		Assets:            f.assets,
+		Assets:            assets,
 		Software:          softwareFake{},
-		Vulnerabilities:   f.vulnerabilities,
+		Vulnerabilities:   vulnerabilities,
 		RawFindings:       rawFindingsFake{},
 		Findings:          findings,
 		RiskAssessments:   riskAssessmentsFake{},
@@ -312,6 +331,26 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 		t.Fatalf("build service: %v", err)
 	}
 	return svc
+}
+
+// stubNormalizePownForge/stubFetchPownForge satisfy NewMux's PownForge
+// parameters (ADR 0021) for tests that don't exercise
+// POST /api/v1/scanner/pownforge-import -- scanner_test.go supplies real
+// fakes for the tests that do.
+func stubNormalizePownForge([]byte, asset.ID) ([]rawfinding.RawFinding, error) {
+	return nil, errors.New("stubNormalizePownForge: not exercised by this test")
+}
+
+func stubFetchPownForge(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("stubFetchPownForge: not exercised by this test")
+}
+
+// newTestMux is NewMux built from newTestService's fakes plus the stub
+// PownForge functions, for the tests that never call the scanner
+// endpoint.
+func newTestMux(t *testing.T, f testServiceFakes) http.Handler {
+	t.Helper()
+	return NewMux(newTestService(t, f), stubNormalizePownForge, stubFetchPownForge)
 }
 
 // get issues an authenticated GET (RequireScope now gates every route
@@ -339,7 +378,7 @@ func getAs(t *testing.T, h http.Handler, path, rawToken string) *httptest.Respon
 // (never `null`) when the underlying list is empty, matching ADR 0011's
 // "the response is the resource array itself".
 func TestNewMux_EmptyListsAreJSONArrays(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	for _, path := range []string{
 		"/api/v1/assets",
@@ -365,7 +404,7 @@ func TestNewMux_EmptyListsAreJSONArrays(t *testing.T) {
 
 func TestNewMux_AssetsReturnsData(t *testing.T) {
 	a := &asset.Asset{ID: asset.NewID(), Hostname: "web-01"}
-	mux := NewMux(newTestService(t, testServiceFakes{assets: assetsFake{items: []*asset.Asset{a}}}))
+	mux := newTestMux(t, testServiceFakes{assets: assetsFake{items: []*asset.Asset{a}}})
 
 	rec := get(t, mux, "/api/v1/assets")
 	if rec.Code != http.StatusOK {
@@ -383,7 +422,7 @@ func TestNewMux_AssetsReturnsData(t *testing.T) {
 
 func TestNewMux_VulnerabilitiesReturnsData(t *testing.T) {
 	v := &vulnerability.Vulnerability{ID: vulnerability.NewID(), Title: "Zabbix Agent 2 Heap Overflow", CVEID: "CVE-2021-36159"}
-	mux := NewMux(newTestService(t, testServiceFakes{vulnerabilities: vulnerabilitiesFake{items: []*vulnerability.Vulnerability{v}}}))
+	mux := newTestMux(t, testServiceFakes{vulnerabilities: vulnerabilitiesFake{items: []*vulnerability.Vulnerability{v}}})
 
 	rec := get(t, mux, "/api/v1/vulnerabilities")
 	if rec.Code != http.StatusOK {
@@ -401,7 +440,7 @@ func TestNewMux_VulnerabilitiesReturnsData(t *testing.T) {
 
 func TestNewMux_VerificationsReturnsData(t *testing.T) {
 	v := &verification.Verification{ID: verification.NewID(), Method: verification.MethodScannerRescan, Result: verification.ResultPass}
-	mux := NewMux(newTestService(t, testServiceFakes{verifications: verificationsFake{items: []*verification.Verification{v}}}))
+	mux := newTestMux(t, testServiceFakes{verifications: verificationsFake{items: []*verification.Verification{v}}})
 
 	rec := get(t, mux, "/api/v1/verifications")
 	if rec.Code != http.StatusOK {
@@ -418,9 +457,9 @@ func TestNewMux_VerificationsReturnsData(t *testing.T) {
 }
 
 func TestNewMux_ApplicationErrorBecomes500(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{
+	mux := newTestMux(t, testServiceFakes{
 		findings: findingsFake{err: errors.New("application: list findings: boom")},
-	}))
+	})
 
 	rec := get(t, mux, "/api/v1/findings")
 	if rec.Code != http.StatusInternalServerError {
@@ -437,7 +476,7 @@ func TestNewMux_ApplicationErrorBecomes500(t *testing.T) {
 }
 
 func TestNewMux_UnknownRouteIs404(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	rec := get(t, mux, "/api/v1/software")
 	if rec.Code != http.StatusNotFound {
@@ -446,7 +485,7 @@ func TestNewMux_UnknownRouteIs404(t *testing.T) {
 }
 
 func TestRequireScope_MissingAuthorizationHeaderIs401(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	rec := getAs(t, mux, "/api/v1/assets", "")
 	if rec.Code != http.StatusUnauthorized {
@@ -462,7 +501,7 @@ func TestRequireScope_MissingAuthorizationHeaderIs401(t *testing.T) {
 }
 
 func TestRequireScope_UnknownTokenIs401(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	rec := getAs(t, mux, "/api/v1/assets", "rf_this-token-does-not-exist")
 	if rec.Code != http.StatusUnauthorized {
@@ -478,7 +517,7 @@ func TestRequireScope_UnknownTokenIs401(t *testing.T) {
 }
 
 func TestRequireScope_WrongSchemeIs401(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/assets", nil)
 	req.Header.Set("Authorization", "Basic "+testRawToken)
@@ -491,7 +530,7 @@ func TestRequireScope_WrongSchemeIs401(t *testing.T) {
 }
 
 func TestRequireScope_InsufficientScopeIs403(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{}))
+	mux := newTestMux(t, testServiceFakes{})
 
 	rec := getAs(t, mux, "/api/v1/assets", testRawTokenWrongScope)
 	if rec.Code != http.StatusForbidden {

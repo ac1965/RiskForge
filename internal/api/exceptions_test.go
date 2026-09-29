@@ -92,7 +92,7 @@ func TestExceptionWorkflow_EndToEnd(t *testing.T) {
 	findings.byID[f.ID] = f
 
 	exceptions := newStatefulExceptionsRepo()
-	mux := NewMux(newTestService(t, testServiceFakes{findingsRepo: findings, exceptionsRepo: exceptions}))
+	mux := newTestMux(t, testServiceFakes{findingsRepo: findings, exceptionsRepo: exceptions})
 
 	// A requester-scoped token can create a request, but not decide one.
 	createBody := map[string]string{
@@ -155,7 +155,7 @@ func TestExceptionWorkflow_EndToEnd(t *testing.T) {
 }
 
 func TestRequestException_MissingRequiredFieldIs400(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()}))
+	mux := newTestMux(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()})
 
 	rec := postJSON(t, mux, testRawTokenExceptionRequester, "/api/v1/exceptions", map[string]string{"Reason": "no finding id given"})
 	if rec.Code != http.StatusBadRequest {
@@ -164,7 +164,7 @@ func TestRequestException_MissingRequiredFieldIs400(t *testing.T) {
 }
 
 func TestRequestException_UnknownFindingIsRejected(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()}))
+	mux := newTestMux(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()})
 
 	body := map[string]string{
 		"FindingID": string(finding.NewID()),
@@ -182,7 +182,7 @@ func TestRequestException_UnknownFindingIsRejected(t *testing.T) {
 }
 
 func TestApproveException_UnknownIDIs404(t *testing.T) {
-	mux := NewMux(newTestService(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()}))
+	mux := newTestMux(t, testServiceFakes{findingsRepo: newStatefulFindingsRepo(), exceptionsRepo: newStatefulExceptionsRepo()})
 
 	rec := postJSON(t, mux, testRawTokenExceptionApprover, "/api/v1/exceptions/"+string(exception.NewID())+"/approve", map[string]string{"Reason": "x"})
 	if rec.Code != http.StatusNotFound {
@@ -195,7 +195,7 @@ func TestExpireException_DefaultsReason(t *testing.T) {
 	f := &finding.Finding{ID: finding.NewID(), Status: finding.StatusOpen}
 	findings.byID[f.ID] = f
 	exceptions := newStatefulExceptionsRepo()
-	mux := NewMux(newTestService(t, testServiceFakes{findingsRepo: findings, exceptionsRepo: exceptions}))
+	mux := newTestMux(t, testServiceFakes{findingsRepo: findings, exceptionsRepo: exceptions})
 
 	created := requestAndApprove(t, mux, f.ID)
 

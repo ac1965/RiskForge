@@ -738,7 +738,13 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   Dry Run・`riskforge-worker`との実行権限分離をHTTP層でどう表現するかを
   含めて別ADRに意図的に先送りしている
 - `internal/infrastructure/datasource`: NVD/CISA KEV/OSV等のAdapter
-  インターフェースの説明のみ。実装はまだない(§19)
+  インターフェースの説明のみ。実装はまだない(§19)。2026-09-30の実機PoC
+  ([§14.0.1](#1401-実機poc-pownforgeの検知是正再検証をremediationワークフローで完結2026-09-30))
+  で、これが無いと`known_vulnerability`分類のRawFinding(CVEを持つが
+  未登録)は`unmatched`のまま何もFindingを作れないことを確認した
+  (回避策として`vulnerability add`での手動登録が要る)。単なる「カタログ
+  を自動で埋める便利機能」ではなく、PownForge連携でCVE付きの検知結果を
+  実際にFinding化するための実質的な前提条件だと判明した
 - `riskforge-agent` / `riskforge-worker`: バイナリの骨格のみで、
   実行すると "not implemented yet" を返す
 - `application.RemediationExecutor`の実装: `internal/cli`の
@@ -934,6 +940,57 @@ Normalizer→Matcher→Adapter(fetch/normalize/evidence)→CLI/HTTP取り込み
 到達する`fetch()`の認証(PownForge自身が持たないため現状は不要)、
 ATT&CK/CVSSフィールドの最終採用可否、`unknown_vulnerability`/
 `unclassified`ケースの永続化の運用(レビューUI等)である。
+
+### 14.0.1 実機PoC: PownForgeの検知→是正→再検証をRemediationワークフローで完結(2026-09-30)
+
+PownForge側`docs/handbook.md` §7「実機PoC」(nginx:1.16.0→1.27への
+実際のイメージ差し替えで83件のCVEが解消したPoC)のデータを実際に
+`riskforge scanner import-pownforge`で取り込み、Finding発見から
+Remediation実行・Verificationまでを実インフラ(実PostgreSQL+実際に
+ビルドした`riskforge`バイナリ)で一気通貫に確認した。
+
+**前提として判明した制約**: `known_vulnerability`分類(CVEを含む
+RawFinding、[§20A.2](../AGENTS.md#20a-pownforge-integration))は、
+その**CVEが既にRiskForge自身のVulnerabilityカタログに登録済みの場合
+のみ**`correlated`してFindingが作られる。`unknown_vulnerability`の
+自動登録([ADR 0017](adr/0017-unknown-vulnerability-registration.md))は
+CVEを持たないRawFinding専用で、CVEを持つが未登録のRawFindingは
+`unmatched`のまま何も作られない。カタログを埋めるNVD/KEV/OSV Data
+Source Adapter([§12](#12-実装状況))が未実装のため、このPoCでは
+`riskforge vulnerability add --cve-id CVE-2022-1664 ...`で対象の
+Vulnerabilityを1件手動登録してから取り込んだ。
+
+**手順と実機確認結果**:
+1. `riskforge scanner import-pownforge <before-run>.json --target
+   nginx-image-scan`でAsset自動登録(`asset discover`相当、ADR 0020)。
+   `CVE-2022-1664`(dpkg、critical、CVSS 9.8)が`correlated`し、
+   Finding(`status: open`)とEvidence(ADR 0022)が実際に作られた
+2. `riskforge remediation propose`→`approve`→`preview`(dry
+   run、[AGENTS.md §33](../AGENTS.md))→`execute`で、Remediation
+   Plan(action-type: upgrade、"nginx:1.16.0→1.27")を実際に
+   `completed`まで進めた
+3. after-runを同じAssetへ再取り込みし、`CVE-2022-1664`が
+   もう`correlated`しない(=もう検出されない)ことを確認。この
+   after-run取り込みで作られたEvidenceを使い、`riskforge verify
+   <finding> --method scanner_rescan --result pass`で検証結果を記録
+4. **Findingの最終状態は`verified`**(`open`→(Remediation実行)→
+   `verify`で`verified`)。`riskforge risk assess --finding <id>`は
+   `risk 40.0 (medium)`を返した
+
+**副次的に発見した制約(Evidence ContentHashの限界)**: `container`
+プラグイン(trivy)は結果を`-o <file>`でファイルへ書き、標準出力には
+何も書かない(`raw_stdout`が常に空文字列)。ADR 0022の`ContentHash`
+実装(`stdout_sha256`を使う)がそのまま空文字列のSHA256
+(`e3b0c44...`)になり、**このプラグインについてはContentHashが実質的に
+何も検証しない**(異なる2回のスキャン結果でも同じハッシュになる)。
+ADR 0022の設計自体([§18.4のstdout_sha256を使う判断](adr/0022-pownforge-evidence-bridging.md))は
+標準出力に結果を書くプラグイン(nuclei等、ADR 0022の実機検証で使用)を
+前提にしており、`container`/`imagevuln`(grype、同じくtrivy系で
+ファイル出力)のようにファイル出力するプラグインでは前提が崩れる。
+今回のPoCでは実害は無かった(Finding自体は正しくcorrelated/verified
+したため)が、ContentHashによる改ざん検知を`container`/`imagevuln`
+取り込みで実際に信頼したい場合は追加対応が必要(未着手、優先度は
+ユーザー判断)。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

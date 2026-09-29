@@ -715,7 +715,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | Phase 2 | Risk Engine / Priority Engine / HTTP API(読み取り専用7エンドポイント+Exception書き込み・トークン認証) / Dashboard(一覧+Exception承認UI+KPI一部) | Risk/Priority Engine、読み取り専用HTTP API(当初5エンドポイント、[ADR 0011](adr/0011-http-api-design.md)、P0-2。ADR 0011自身がギャップとして残した`vulnerabilities`/`verifications`も、KPIフェーズBの前提として追加し計7エンドポイントに拡張)、トークン認証・`riskforge token`・TLS必須化([ADR 0012](adr/0012-http-api-authentication.md)、P0-4)、Exceptionワークフローの書き込み系([ADR 0014](adr/0014-exception-write-endpoints.md)、P0-3第一弾)はすべて実装済み。Dashboard(`dashboard/`、[ADR 0013](adr/0013-dashboard-bootstrap.md))は5リソースの一覧表示に加え、Exceptions一覧の承認操作ボタン(ADR 0014呼び出し)、OverviewタブでのKPI一部(既存一覧エンドポイントだけで計算できる範囲)まで実装済み。KPI集計の残り(Critical Findings等)はバックエンドのエンドポイントは揃ったがDashboard側でまだ使っていない。Remediationの書き込み系・Dashboardの詳細画面は未着手 |
 | Phase 3 | Remediation / Verification / Evidence | 実装済み(実際のコマンド実行パイプライン§31/§32は未実装、`manualExecutor`で代替) |
 | Phase 4 | Exception / Policy / Audit | 実装済み(汎用の永続化Policy集約は意図的に未実装、[ADR 0007](adr/0007-exception-policy-audit.md)参照) |
-| Phase 5 | Automation / AI assistance / Integrations | 未着手。PownForge連携・NVD/KEV/OSV Data Source Adapterはここに含まれる |
+| Phase 5 | Automation / AI assistance / Integrations | PownForge連携([ADR 0015](adr/0015-rawfinding-domain-model.md)〜[0022](adr/0022-pownforge-evidence-bridging.md)、第14章)はScanner→RawFinding→Normalizer→Matcher→Adapter→CLI/HTTP取り込みまで実装済み。NVD/KEV/OSV Data Source Adapter、AI assistanceは未着手 |
 
 具体的に未実装なもの:
 
@@ -743,8 +743,9 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   実行すると "not implemented yet" を返す
 - `application.RemediationExecutor`の実装: `internal/cli`の
   `manualExecutor`が唯一の実装で、実際のOSコマンド実行は行わない
-- PownForge連携(§20A): 両プロジェクトとも未実装。詳細は
-  [第14章](#14-pownforgeとの関係姉妹プロジェクト)
+- PownForge連携(§20A): ADR 0015〜0022(第14章)で実装済み。残るのは
+  ATT&CK/CVSSフィールドの最終採用可否、`unknown_vulnerability`/
+  `unclassified`ケースの永続化の運用(レビューUI等)
 
 ## 13. ADRダイジェスト(設計判断の索引)
 

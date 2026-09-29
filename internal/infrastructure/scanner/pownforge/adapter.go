@@ -42,7 +42,13 @@ type pfEvidence struct {
 	ReturnCode   int       `json:"returncode"`
 	StdoutSHA256 string    `json:"stdout_sha256"`
 	StderrSHA256 string    `json:"stderr_sha256"`
-	ToolVersion  string    `json:"tool_version"`
+	// ResultSHA256 (ADR 0023): hash of the plugin's actual normalized
+	// result, added to PownForge after ADR 0022 shipped. Empty (Go's zero
+	// value) for a JSON `null` or a missing key -- i.e. a PownForge
+	// version/run predating this field -- in which case ExtractEvidence
+	// falls back to StdoutSHA256.
+	ResultSHA256 string `json:"result_sha256"`
+	ToolVersion  string `json:"tool_version"`
 }
 
 // pfFinding mirrors PownForge's Finding (src/pownforge/core/models/
@@ -125,10 +131,17 @@ func Fetch(ctx context.Context, baseURL, runID string) ([]byte, error) {
 // location of its own) -- the caller fills Params.Location in before
 // calling RecordEvidence.
 //
-// ContentHash uses the run's stdout_sha256 (PownForge's plugin output --
-// where detection results and raw tool output live) rather than
-// stderr_sha256 or a hash spanning both: this is a deliberate, documented
-// choice, not an attempt to cover the run's complete output.
+// ContentHash prefers the run's result_sha256 over stdout_sha256 (ADR
+// 0023, superseding ADR 0022's original stdout_sha256-only choice): a
+// PownForge plugin that writes its findings to a file instead of stdout
+// (e.g. `container`/trivy's `-o <file>`) leaves stdout empty, which made
+// stdout_sha256 always the hash of "" for that plugin -- verifying
+// nothing, discovered via a real end-to-end PoC (RiskForge docs/
+// handbook.md §14.0.1). result_sha256 hashes PownForge's actual
+// normalized result regardless of which stream/file the tool wrote to.
+// Falls back to stdout_sha256 when result_sha256 is empty (a PownForge
+// version/run that predates it), never stderr_sha256 or a hash spanning
+// both -- same non-goal ADR 0022 already documented.
 func ExtractEvidence(payload []byte, assetID asset.ID) (evidence.Params, error) {
 	var run runRecord
 	if err := json.Unmarshal(payload, &run); err != nil {
@@ -145,13 +158,18 @@ func ExtractEvidence(payload []byte, assetID asset.ID) (evidence.Params, error) 
 		collectedAt = run.CreatedAt
 	}
 
+	contentHash := run.Evidence.ResultSHA256
+	if contentHash == "" {
+		contentHash = run.Evidence.StdoutSHA256
+	}
+
 	return evidence.Params{
 		Type:        evidence.TypeDetectionResult,
 		Source:      source,
 		SourceRef:   run.RunID,
 		CollectedAt: collectedAt,
 		AssetID:     assetID,
-		ContentHash: run.Evidence.StdoutSHA256,
+		ContentHash: contentHash,
 	}, nil
 }
 

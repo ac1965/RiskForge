@@ -786,7 +786,8 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0019](adr/0019-pownforge-cli-ingestion.md) | `riskforge scanner import-pownforge`: fetch()とCLI配線(PownForge連携 第五弾) | `internal/cli`が`internal/infrastructure`に直接依存できない制約に対し、`ServiceFactory`/`HandlerFactory`と同じ関数注入パターン(`PownForgeNormalizer`)で解決。`fetch()`はPownForgeが事前にエクスポートしたJSONファイルを読む最も単純な形とし、`--asset`は既存asset.IDを直接受け取る(target名の自動解決はしない、`finding correlate --asset`と同じ流儀)。`internal/cli`の既存方針どおり単体テストは追加せず、実PostgreSQL(`docker compose`)に対する実機検証(false-positive除外、unmatched→correlatedへの遷移、再取り込みでのidempotency)で確認 |
 | [0020](adr/0020-pownforge-network-fetch-and-target-resolution.md) | ネットワーク経由fetchとtarget名の自動解決(PownForge連携 第六弾) | `Fetch`(実際の`GET /api/runs/{run_id}`へのHTTP GET、実PownForgeプロセスに対する実機検証込み)、`--target`による`discover_assets()`経由のAsset自動解決(`asset discover`と同じ既定値。実機検証で`asset.New`のType必須検証に引っかかるバグを発見し修正)、`<file>`と`--pownforge-url`/`--run-id`の相互排他制御を追加。HTTP APIエンドポイント・Evidenceの橋渡しは別ADRに先送り |
 | [0021](adr/0021-pownforge-http-api-endpoint.md) | `POST /api/v1/scanner/pownforge-import`: HTTP APIエンドポイント(PownForge連携 第七弾) | 新スコープ`scanner:import`を追加し、CLIと同じ`RunRecord`/`PownForgeURL`+`RunID`/`AssetID`/`Target`の相互排他バリデーションをHTTP側にも実装。`internal/api`も`internal/infrastructure`を直接importしない制約のため、`NewMux`/`HandlerFactory`のシグネチャに無名の生の関数型を使う(名前付き関数型は宣言そのものが異なると代入不可なため)。`internal/api`の既存フェイクがstatelessでMatchRawFindingの前提を満たせず、`statefulAssetsRepo`/`statefulVulnerabilitiesRepo`を新設。実PostgreSQL+実際に起動した`riskforge serve`への実機検証(認証401・スコープ不足403・相互排他400含む)を実施 |
-| [0022](adr/0022-pownforge-evidence-bridging.md) | Evidenceの橋渡し(PownForge連携 第八弾、最終) | `ExtractEvidence`(PownForgeの`RunRecord.evidence`から`ContentHash`は`stdout_sha256`を使用、`Location`は呼び出し元が埋める設計)、`Normalize`に`evidenceID`引数を追加。CLIはファイルパス/fetch URLからLocationを自動導出、HTTP APIのembeddedモードのみ`Location`必須(呼び出し元しか出所を知らないため)。`--skip-evidence`/`SkipEvidence`で無効化可能。実PostgreSQL+実際の`pownforge scan nuclei`実行結果を取り込み、Content Hashが本物のstdout_sha256と完全一致することを実機確認。これでユーザー依頼の4点(fetch・target解決・HTTP API・Evidence橋渡し)が全て完了 |
+| [0022](adr/0022-pownforge-evidence-bridging.md) | Evidenceの橋渡し(PownForge連携 第八弾、最終) | `ExtractEvidence`(PownForgeの`RunRecord.evidence`から`ContentHash`は`stdout_sha256`を使用、`Location`は呼び出し元が埋める設計)、`Normalize`に`evidenceID`引数を追加。CLIはファイルパス/fetch URLからLocationを自動導出、HTTP APIのembeddedモードのみ`Location`必須(呼び出し元しか出所を知らないため)。`--skip-evidence`/`SkipEvidence`で無効化可能。実PostgreSQL+実際の`pownforge scan nuclei`実行結果を取り込み、Content Hashが本物のstdout_sha256と完全一致することを実機確認。これでユーザー依頼の4点(fetch・target解決・HTTP API・Evidence橋渡し)が全て完了(**2026-09-30、ADR 0023によりstdout_sha256の選択は上書きされた**) |
+| [0023](adr/0023-pownforge-result-sha256-content-hash.md) | Evidence ContentHashをresult_sha256優先に変更 | 実機PoC第2弾で、`container`(trivy)のようにファイル出力するプラグインでは`stdout_sha256`が常に空文字列のハッシュになり改ざん検知が機能しないことが判明。PownForge側に追加された`Evidence.result_sha256`(プラグインの正規化済み結果のハッシュ、I/O方式に非依存)を優先し、無ければ`stdout_sha256`にフォールバックするよう`ExtractEvidence`を変更。実際のPownForge `container`実行結果を取り込み、Content Hashが本物の`result_sha256`と完全一致することを実機確認 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -988,9 +989,19 @@ ADR 0022の設計自体([§18.4のstdout_sha256を使う判断](adr/0022-pownfor
 前提にしており、`container`/`imagevuln`(grype、同じくtrivy系で
 ファイル出力)のようにファイル出力するプラグインでは前提が崩れる。
 今回のPoCでは実害は無かった(Finding自体は正しくcorrelated/verified
-したため)が、ContentHashによる改ざん検知を`container`/`imagevuln`
-取り込みで実際に信頼したい場合は追加対応が必要(未着手、優先度は
-ユーザー判断)。
+したため)。
+
+**この制約への対応(2026-09-30、[ADR 0023](adr/0023-pownforge-result-sha256-content-hash.md))**:
+PownForge側に`Evidence.result_sha256`(プラグインの正規化済み結果を
+ハッシュする、I/O方式に非依存のフィールド)が追加されたのを受け、
+`ExtractEvidence`のContentHash算出を`result_sha256`優先・
+`stdout_sha256`フォールバックに変更した。同じPownForge `container`実行
+結果を再度取り込み、Content Hashが本物の`result_sha256`
+(`73cab4f6632e126c8429236586712f5253c4bd3a8121aa312fbd1b1ea93bffea`)と
+完全一致することを実機確認済み。`imagevuln`(grype)も同じくファイル
+出力方式のため、同じ修正が有効(PownForge側`result_sha256`は
+`core/runner.py`の共通経路で全プラグインに付与されるため、`imagevuln`
+固有の追加対応は不要)。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

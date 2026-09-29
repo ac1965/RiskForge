@@ -274,6 +274,63 @@ func TestExtractEvidence(t *testing.T) {
 	}
 }
 
+func TestExtractEvidencePrefersResultSHA256OverStdoutSHA256(t *testing.T) {
+	// The motivating case (ADR 0023): a plugin like `container` (trivy)
+	// writes its findings to a file, leaving stdout empty -- stdout_sha256
+	// here is deliberately the hash of "" to mirror that, and must NOT be
+	// what ContentHash ends up as.
+	payload := `{
+		"run_id": "run-container-1", "target": "nginx-image-scan", "plugin": "container",
+		"created_at": "2026-09-30T00:00:00Z",
+		"evidence": {
+			"command": ["trivy", "image", "nginx:1.27"],
+			"started_at": "2026-09-30T00:00:00Z",
+			"finished_at": "2026-09-30T00:00:05Z",
+			"returncode": 0,
+			"stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"result_sha256": "73cab4f6632e126c8429236586712f5253c4bd3a8121aa312fbd1b1ea93bffea",
+			"tool_version": "Version: 0.74.0"
+		},
+		"findings": []
+	}`
+	params, err := ExtractEvidence([]byte(payload), asset.NewID())
+	if err != nil {
+		t.Fatalf("ExtractEvidence() unexpected error: %v", err)
+	}
+	if params.ContentHash != "73cab4f6632e126c8429236586712f5253c4bd3a8121aa312fbd1b1ea93bffea" {
+		t.Errorf("ContentHash = %q, want the run's result_sha256 (not stdout_sha256)", params.ContentHash)
+	}
+}
+
+func TestExtractEvidenceFallsBackToStdoutSHA256WhenResultSHA256Absent(t *testing.T) {
+	// A PownForge run saved before result_sha256 existed (or a PownForge
+	// version predating it): result_sha256 is absent from the JSON
+	// entirely, not just empty -- ContentHash must fall back to
+	// stdout_sha256 rather than ending up empty.
+	payload := `{
+		"run_id": "run-old-1", "target": "lab-web", "plugin": "nuclei",
+		"created_at": "2026-09-28T12:00:00Z",
+		"evidence": {
+			"command": ["nuclei", "-u", "http://127.0.0.1:8918"],
+			"started_at": "2026-09-28T12:00:08Z",
+			"finished_at": "2026-09-28T12:00:09Z",
+			"returncode": 0,
+			"stdout_sha256": "5f36307a583913b27cf17090793c0b9dd97aaa86958d06811773daee03c719f2",
+			"stderr_sha256": "9362b032bcb7342f2ad38091d3fd48f63a03c5da6d72dbcd9ac3d86e0a5ec53c",
+			"tool_version": "Nuclei Engine Version: v3.11.1"
+		},
+		"findings": []
+	}`
+	params, err := ExtractEvidence([]byte(payload), asset.NewID())
+	if err != nil {
+		t.Fatalf("ExtractEvidence() unexpected error: %v", err)
+	}
+	if params.ContentHash != "5f36307a583913b27cf17090793c0b9dd97aaa86958d06811773daee03c719f2" {
+		t.Errorf("ContentHash = %q, want the run's stdout_sha256 as fallback", params.ContentHash)
+	}
+}
+
 func TestExtractEvidenceFallsBackToCreatedAtWhenFinishedAtIsMissing(t *testing.T) {
 	payload := `{
 		"run_id": "run-1", "target": "lab", "plugin": "checkov",

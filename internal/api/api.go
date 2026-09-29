@@ -8,6 +8,7 @@ import (
 	"github.com/ac1965/riskforge/internal/application"
 	"github.com/ac1965/riskforge/internal/domain/asset"
 	"github.com/ac1965/riskforge/internal/domain/authn"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
@@ -18,24 +19,26 @@ import (
 // gated by RequireScope's "read" scope (ADR 0012), the Exception write
 // endpoints decided by ADR 0014 (P0-3's first slice), gated by
 // "exception:request"/"exception:approve", and
-// POST /api/v1/scanner/pownforge-import (ADR 0021), gated by
+// POST /api/v1/scanner/pownforge-import (ADR 0021/0022), gated by
 // "scanner:import". It is the package's only exported entry point for
 // building the handler; individual handlers and the JSON encode/decode
 // helpers stay unexported.
 //
-// normalizePownForge/fetchPownForge are declared with their raw,
-// unnamed function type here (not the PownForgeNormalizer/PownForgeFetcher
-// aliases scanner.go uses internally) on purpose: internal/cli's
-// HandlerFactory (serve.go) must stay assignable from this exact
-// signature without internal/cli importing this package's named types
-// (ADR 0011's existing "internal/cli never imports internal/api"
-// boundary) — two distinctly-named function types with identical
-// underlying signatures are not interchangeable at a call boundary,
-// only structurally identical unnamed ones are.
+// normalizePownForge/fetchPownForge/extractPownForgeEvidence are declared
+// with their raw, unnamed function type here (not the
+// PownForgeNormalizer/PownForgeFetcher/PownForgeEvidenceExtractor aliases
+// scanner.go uses internally) on purpose: internal/cli's HandlerFactory
+// (serve.go) must stay assignable from this exact signature without
+// internal/cli importing this package's named types (ADR 0011's existing
+// "internal/cli never imports internal/api" boundary) — two
+// distinctly-named function types with identical underlying signatures
+// are not interchangeable at a call boundary, only structurally identical
+// unnamed ones are.
 func NewMux(
 	svc *application.Service,
-	normalizePownForge func(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error),
+	normalizePownForge func(payload []byte, assetID asset.ID, evidenceID evidence.ID) ([]rawfinding.RawFinding, error),
 	fetchPownForge func(ctx context.Context, baseURL, runID string) ([]byte, error),
+	extractPownForgeEvidence func(payload []byte, assetID asset.ID) (evidence.Params, error),
 ) http.Handler {
 	mux := http.NewServeMux()
 	requireRead := RequireScope(svc, authn.ScopeRead)
@@ -57,7 +60,7 @@ func NewMux(
 	mux.Handle("POST /api/v1/exceptions/{id}/expire", requireExceptionApprove(handleExpireException(svc)))
 	mux.Handle("POST /api/v1/exceptions/{id}/revoke", requireExceptionApprove(handleRevokeException(svc)))
 
-	mux.Handle("POST /api/v1/scanner/pownforge-import", requireScannerImport(handleImportPownForge(svc, normalizePownForge, fetchPownForge)))
+	mux.Handle("POST /api/v1/scanner/pownforge-import", requireScannerImport(handleImportPownForge(svc, normalizePownForge, fetchPownForge, extractPownForgeEvidence)))
 
 	return mux
 }

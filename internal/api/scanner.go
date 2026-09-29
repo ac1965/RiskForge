@@ -6,28 +6,32 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ac1965/riskforge/internal/application"
 	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
 // This file is the HTTP counterpart of `riskforge scanner import-pownforge`
-// (ADR 0015-0020): POST /api/v1/scanner/pownforge-import. Like
+// (ADR 0015-0022): POST /api/v1/scanner/pownforge-import. Like
 // internal/cli, this package must not import internal/infrastructure
 // directly (AGENTS.md §25 Layering) -- cmd/riskforge/main.go injects
-// internal/infrastructure/scanner/pownforge.Normalize/Fetch as plain
-// function values into NewMux, the same pattern internal/cli/root.go
-// already uses for PownForgeNormalizer/PownForgeFetcher.
+// internal/infrastructure/scanner/pownforge.Normalize/Fetch/ExtractEvidence
+// as plain function values into NewMux, the same pattern
+// internal/cli/root.go already uses for
+// PownForgeNormalizer/PownForgeFetcher/PownForgeEvidenceExtractor.
 
-// PownForgeNormalizer and PownForgeFetcher mirror internal/cli's own
-// identically-named types (ADR 0018/0020). They are redeclared here
-// rather than imported from internal/cli, which this package (a sibling
-// UI-layer driving adapter, not a dependency of internal/cli) must not
-// depend on.
-type PownForgeNormalizer func(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error)
+// PownForgeNormalizer, PownForgeFetcher, and PownForgeEvidenceExtractor
+// mirror internal/cli's own identically-named types (ADR 0018/0020/0022).
+// They are redeclared here rather than imported from internal/cli, which
+// this package (a sibling UI-layer driving adapter, not a dependency of
+// internal/cli) must not depend on.
+type PownForgeNormalizer func(payload []byte, assetID asset.ID, evidenceID evidence.ID) ([]rawfinding.RawFinding, error)
 type PownForgeFetcher func(ctx context.Context, baseURL, runID string) ([]byte, error)
+type PownForgeEvidenceExtractor func(payload []byte, assetID asset.ID) (evidence.Params, error)
 
 // pownforgeImportBody is POST /api/v1/scanner/pownforge-import's request
 // shape. Exactly one of RunRecord (the PownForge RunRecord JSON, embedded
@@ -35,12 +39,21 @@ type PownForgeFetcher func(ctx context.Context, baseURL, runID string) ([]byte, 
 // PownForgeURL+RunID (fetched server-side) must be given, mirroring the
 // CLI's <file> vs --pownforge-url/--run-id split. Exactly one of AssetID
 // or Target, mirroring --asset/--target.
+//
+// Location records where RunRecord's bytes came from, for the Evidence
+// entry (ADR 0022) -- required when RunRecord is embedded directly
+// (nothing else identifies where the caller got it from); derived
+// automatically from PownForgeURL+RunID when fetched server-side, the same
+// way the CLI derives it, so it is ignored in that mode. SkipEvidence
+// mirrors the CLI's --skip-evidence.
 type pownforgeImportBody struct {
 	RunRecord    json.RawMessage
 	PownForgeURL string
 	RunID        string
 	AssetID      string
 	Target       string
+	Location     string
+	SkipEvidence bool
 }
 
 // pownforgeImportResult mirrors one row of `scanner import-pownforge`'s
@@ -51,7 +64,7 @@ type pownforgeImportResult struct {
 	FindingID string
 }
 
-func handleImportPownForge(svc *application.Service, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher) http.HandlerFunc {
+func handleImportPownForge(svc *application.Service, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher, extractPownForgeEvidence PownForgeEvidenceExtractor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body pownforgeImportBody
 		if err := decodeJSONBody(r, &body); err != nil {
@@ -76,8 +89,13 @@ func handleImportPownForge(svc *application.Service, normalizePownForge PownForg
 			writeError(w, http.StatusBadRequest, errors.New("give exactly one of AssetID or Target"))
 			return
 		}
+		if haveEmbedded && !body.SkipEvidence && body.Location == "" {
+			writeError(w, http.StatusBadRequest, errors.New("Location is required with an embedded RunRecord unless SkipEvidence is true (ADR 0022): nothing else identifies where it came from"))
+			return
+		}
 
 		payload := []byte(body.RunRecord)
+		location := body.Location
 		if haveFetch {
 			fetched, err := fetchPownForge(r.Context(), body.PownForgeURL, body.RunID)
 			if err != nil {
@@ -87,6 +105,7 @@ func handleImportPownForge(svc *application.Service, normalizePownForge PownForg
 				return
 			}
 			payload = fetched
+			location = strings.TrimRight(body.PownForgeURL, "/") + "/api/runs/" + body.RunID
 		}
 
 		assetID := asset.ID(body.AssetID)
@@ -99,7 +118,29 @@ func handleImportPownForge(svc *application.Service, normalizePownForge PownForg
 			assetID = a.ID
 		}
 
-		rawFindings, err := normalizePownForge(payload, assetID)
+		var evidenceID evidence.ID
+		if !body.SkipEvidence {
+			evParams, err := extractPownForgeEvidence(payload, assetID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("extract evidence: %w", err))
+				return
+			}
+			if evParams.ContentHash != "" {
+				evParams.Location = location
+				ev, err := svc.RecordEvidence(r.Context(), evParams)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, fmt.Errorf("record evidence: %w", err))
+					return
+				}
+				evidenceID = ev.ID
+			}
+			// Same as the CLI (ADR 0022): an empty ContentHash means the
+			// payload's `evidence` sub-object was missing/empty, so there
+			// is nothing valid to record -- proceed without Evidence
+			// rather than fail the whole import over it.
+		}
+
+		rawFindings, err := normalizePownForge(payload, assetID, evidenceID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("normalize: %w", err))
 			return

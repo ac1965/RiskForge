@@ -24,7 +24,7 @@ import (
 const databaseURLEnv = "RISKFORGE_DATABASE_URL"
 
 func main() {
-	if err := cli.NewRootCommand(newService, migrate, api.NewMux, pownforge.Normalize, pownforge.Fetch).Execute(); err != nil {
+	if err := cli.NewRootCommand(newService, migrate, api.NewMux, pownforge.Normalize, pownforge.Fetch, pownforge.ExtractEvidence).Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

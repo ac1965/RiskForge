@@ -262,6 +262,7 @@ type testServiceFakes struct {
 	exceptionsRepo      application.ExceptionRepository
 	assetsRepo          application.AssetRepository
 	vulnerabilitiesRepo application.VulnerabilityRepository
+	evidenceRepo        application.EvidenceRepository
 }
 
 func newTestService(t *testing.T, f testServiceFakes) *application.Service {
@@ -308,6 +309,10 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 	if f.vulnerabilitiesRepo != nil {
 		vulnerabilities = f.vulnerabilitiesRepo
 	}
+	var evidenceRepo application.EvidenceRepository = evidenceFake{}
+	if f.evidenceRepo != nil {
+		evidenceRepo = f.evidenceRepo
+	}
 
 	svc, err := application.NewService(application.Service{
 		Assets:            assets,
@@ -319,7 +324,7 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 		PriorityDecisions: f.priorityDecisions,
 		RemediationPlans:  f.remediationPlans,
 		Verifications:     f.verifications,
-		Evidence:          evidenceFake{},
+		Evidence:          evidenceRepo,
 		Exceptions:        exceptions,
 		Audit:             auditFake{},
 		Principals:        principalsFake{},
@@ -333,11 +338,11 @@ func newTestService(t *testing.T, f testServiceFakes) *application.Service {
 	return svc
 }
 
-// stubNormalizePownForge/stubFetchPownForge satisfy NewMux's PownForge
-// parameters (ADR 0021) for tests that don't exercise
-// POST /api/v1/scanner/pownforge-import -- scanner_test.go supplies real
-// fakes for the tests that do.
-func stubNormalizePownForge([]byte, asset.ID) ([]rawfinding.RawFinding, error) {
+// stubNormalizePownForge/stubFetchPownForge/stubExtractPownForgeEvidence
+// satisfy NewMux's PownForge parameters (ADR 0021/0022) for tests that
+// don't exercise POST /api/v1/scanner/pownforge-import -- scanner_test.go
+// supplies real fakes for the tests that do.
+func stubNormalizePownForge([]byte, asset.ID, evidence.ID) ([]rawfinding.RawFinding, error) {
 	return nil, errors.New("stubNormalizePownForge: not exercised by this test")
 }
 
@@ -345,12 +350,16 @@ func stubFetchPownForge(context.Context, string, string) ([]byte, error) {
 	return nil, errors.New("stubFetchPownForge: not exercised by this test")
 }
 
+func stubExtractPownForgeEvidence([]byte, asset.ID) (evidence.Params, error) {
+	return evidence.Params{}, errors.New("stubExtractPownForgeEvidence: not exercised by this test")
+}
+
 // newTestMux is NewMux built from newTestService's fakes plus the stub
 // PownForge functions, for the tests that never call the scanner
 // endpoint.
 func newTestMux(t *testing.T, f testServiceFakes) http.Handler {
 	t.Helper()
-	return NewMux(newTestService(t, f), stubNormalizePownForge, stubFetchPownForge)
+	return NewMux(newTestService(t, f), stubNormalizePownForge, stubFetchPownForge, stubExtractPownForgeEvidence)
 }
 
 // get issues an authenticated GET (RequireScope now gates every route

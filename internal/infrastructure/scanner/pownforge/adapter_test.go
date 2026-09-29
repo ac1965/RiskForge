@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 )
 
@@ -23,6 +25,15 @@ const sampleRunRecordJSON = `{
 	"target": "lab-web",
 	"plugin": "nuclei",
 	"created_at": "2026-09-28T12:00:00Z",
+	"evidence": {
+		"command": ["nuclei", "-u", "http://127.0.0.1:8918", "-jsonl"],
+		"started_at": "2026-09-28T12:00:08Z",
+		"finished_at": "2026-09-28T12:00:09Z",
+		"returncode": 0,
+		"stdout_sha256": "5f36307a583913b27cf17090793c0b9dd97aaa86958d06811773daee03c719f2",
+		"stderr_sha256": "9362b032bcb7342f2ad38091d3fd48f63a03c5da6d72dbcd9ac3d86e0a5ec53c",
+		"tool_version": "Nuclei Engine Version: v3.11.1"
+	},
 	"findings": [
 		{
 			"finding_id": "f1",
@@ -77,7 +88,7 @@ const sampleRunRecordJSON = `{
 
 func TestNormalize(t *testing.T) {
 	assetID := asset.NewID()
-	rawFindings, err := Normalize([]byte(sampleRunRecordJSON), assetID)
+	rawFindings, err := Normalize([]byte(sampleRunRecordJSON), assetID, "")
 	if err != nil {
 		t.Fatalf("Normalize() unexpected error: %v", err)
 	}
@@ -133,7 +144,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestNormalizeRejectsMalformedPayload(t *testing.T) {
-	if _, err := Normalize([]byte("not json"), asset.NewID()); err == nil {
+	if _, err := Normalize([]byte("not json"), asset.NewID(), ""); err == nil {
 		t.Error("Normalize() with malformed JSON: want error, got nil")
 	}
 }
@@ -147,7 +158,7 @@ func TestNormalizeSkipsFindingWithNoTitle(t *testing.T) {
 			{"finding_id": "f2", "title": "real finding", "status": "needs-review", "source": "tool"}
 		]
 	}`
-	rawFindings, err := Normalize([]byte(payload), asset.NewID())
+	rawFindings, err := Normalize([]byte(payload), asset.NewID(), "")
 	if err != nil {
 		t.Fatalf("Normalize() unexpected error: %v", err)
 	}
@@ -162,7 +173,7 @@ func TestNormalizeDefaultsSourceWhenPluginIsEmpty(t *testing.T) {
 		"created_at": "2026-01-01T00:00:00Z",
 		"findings": [{"finding_id": "f1", "title": "x", "status": "needs-review", "source": "manual"}]
 	}`
-	rawFindings, err := Normalize([]byte(payload), asset.NewID())
+	rawFindings, err := Normalize([]byte(payload), asset.NewID(), "")
 	if err != nil {
 		t.Fatalf("Normalize() unexpected error: %v", err)
 	}
@@ -192,7 +203,7 @@ func TestFetch(t *testing.T) {
 		t.Errorf("requested path = %q, want %q", gotPath, "/api/runs/run-abc123")
 	}
 
-	rawFindings, err := Normalize(body, asset.NewID())
+	rawFindings, err := Normalize(body, asset.NewID(), "")
 	if err != nil {
 		t.Fatalf("Normalize(Fetch() result) unexpected error: %v", err)
 	}
@@ -231,4 +242,67 @@ func TestFetchReturnsErrorOnNon200(t *testing.T) {
 	if _, err := Fetch(context.Background(), server.URL, "does-not-exist"); err == nil {
 		t.Error("Fetch() with a 404 response: want error, got nil")
 	}
+}
+
+func TestExtractEvidence(t *testing.T) {
+	assetID := asset.NewID()
+	params, err := ExtractEvidence([]byte(sampleRunRecordJSON), assetID)
+	if err != nil {
+		t.Fatalf("ExtractEvidence() unexpected error: %v", err)
+	}
+
+	if params.Type != evidence.TypeDetectionResult {
+		t.Errorf("Type = %q, want %q", params.Type, evidence.TypeDetectionResult)
+	}
+	if params.Source != "pownforge:nuclei" {
+		t.Errorf("Source = %q, want %q", params.Source, "pownforge:nuclei")
+	}
+	if params.SourceRef != "run-abc123" {
+		t.Errorf("SourceRef = %q, want %q", params.SourceRef, "run-abc123")
+	}
+	if params.AssetID != assetID {
+		t.Errorf("AssetID = %q, want %q", params.AssetID, assetID)
+	}
+	if params.ContentHash != "5f36307a583913b27cf17090793c0b9dd97aaa86958d06811773daee03c719f2" {
+		t.Errorf("ContentHash = %q, want the run's stdout_sha256", params.ContentHash)
+	}
+	if params.CollectedAt.IsZero() {
+		t.Error("CollectedAt is zero, want evidence.finished_at")
+	}
+	if params.Location != "" {
+		t.Errorf("Location = %q, want empty (the caller fills it in)", params.Location)
+	}
+}
+
+func TestExtractEvidenceFallsBackToCreatedAtWhenFinishedAtIsMissing(t *testing.T) {
+	payload := `{
+		"run_id": "run-1", "target": "lab", "plugin": "checkov",
+		"created_at": "2026-01-01T00:00:00Z",
+		"findings": []
+	}`
+	params, err := ExtractEvidence([]byte(payload), asset.NewID())
+	if err != nil {
+		t.Fatalf("ExtractEvidence() unexpected error: %v", err)
+	}
+	if !params.CollectedAt.Equal(mustParseTime(t, "2026-01-01T00:00:00Z")) {
+		t.Errorf("CollectedAt = %v, want run.created_at as fallback", params.CollectedAt)
+	}
+	if params.ContentHash != "" {
+		t.Errorf("ContentHash = %q, want empty (no evidence sub-object in payload)", params.ContentHash)
+	}
+}
+
+func TestExtractEvidenceRejectsMalformedPayload(t *testing.T) {
+	if _, err := ExtractEvidence([]byte("not json"), asset.NewID()); err == nil {
+		t.Error("ExtractEvidence() with malformed JSON: want error, got nil")
+	}
+}
+
+func mustParseTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		t.Fatalf("time.Parse(%q): %v", s, err)
+	}
+	return parsed
 }

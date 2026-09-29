@@ -778,6 +778,7 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
 | [0019](adr/0019-pownforge-cli-ingestion.md) | `riskforge scanner import-pownforge`: fetch()とCLI配線(PownForge連携 第五弾) | `internal/cli`が`internal/infrastructure`に直接依存できない制約に対し、`ServiceFactory`/`HandlerFactory`と同じ関数注入パターン(`PownForgeNormalizer`)で解決。`fetch()`はPownForgeが事前にエクスポートしたJSONファイルを読む最も単純な形とし、`--asset`は既存asset.IDを直接受け取る(target名の自動解決はしない、`finding correlate --asset`と同じ流儀)。`internal/cli`の既存方針どおり単体テストは追加せず、実PostgreSQL(`docker compose`)に対する実機検証(false-positive除外、unmatched→correlatedへの遷移、再取り込みでのidempotency)で確認 |
 | [0020](adr/0020-pownforge-network-fetch-and-target-resolution.md) | ネットワーク経由fetchとtarget名の自動解決(PownForge連携 第六弾) | `Fetch`(実際の`GET /api/runs/{run_id}`へのHTTP GET、実PownForgeプロセスに対する実機検証込み)、`--target`による`discover_assets()`経由のAsset自動解決(`asset discover`と同じ既定値。実機検証で`asset.New`のType必須検証に引っかかるバグを発見し修正)、`<file>`と`--pownforge-url`/`--run-id`の相互排他制御を追加。HTTP APIエンドポイント・Evidenceの橋渡しは別ADRに先送り |
 | [0021](adr/0021-pownforge-http-api-endpoint.md) | `POST /api/v1/scanner/pownforge-import`: HTTP APIエンドポイント(PownForge連携 第七弾) | 新スコープ`scanner:import`を追加し、CLIと同じ`RunRecord`/`PownForgeURL`+`RunID`/`AssetID`/`Target`の相互排他バリデーションをHTTP側にも実装。`internal/api`も`internal/infrastructure`を直接importしない制約のため、`NewMux`/`HandlerFactory`のシグネチャに無名の生の関数型を使う(名前付き関数型は宣言そのものが異なると代入不可なため)。`internal/api`の既存フェイクがstatelessでMatchRawFindingの前提を満たせず、`statefulAssetsRepo`/`statefulVulnerabilitiesRepo`を新設。実PostgreSQL+実際に起動した`riskforge serve`への実機検証(認証401・スコープ不足403・相互排他400含む)を実施 |
+| [0022](adr/0022-pownforge-evidence-bridging.md) | Evidenceの橋渡し(PownForge連携 第八弾、最終) | `ExtractEvidence`(PownForgeの`RunRecord.evidence`から`ContentHash`は`stdout_sha256`を使用、`Location`は呼び出し元が埋める設計)、`Normalize`に`evidenceID`引数を追加。CLIはファイルパス/fetch URLからLocationを自動導出、HTTP APIのembeddedモードのみ`Location`必須(呼び出し元しか出所を知らないため)。`--skip-evidence`/`SkipEvidence`で無効化可能。実PostgreSQL+実際の`pownforge scan nuclei`実行結果を取り込み、Content Hashが本物のstdout_sha256と完全一致することを実機確認。これでユーザー依頼の4点(fetch・target解決・HTTP API・Evidence橋渡し)が全て完了 |
 
 ## 14. PownForgeとの関係(姉妹プロジェクト)
 
@@ -911,6 +912,26 @@ HTTP側にも実装した。実装中に、`internal/api`も`internal/cli`と同
 (トークン無し401、スコープ不足403、入力の相互排他違反400)を実施した。
 Evidenceの橋渡し・ATT&CK/CVSSフィールドの最終採用可否は、引き続き
 未実装のままである。
+
+続けて[ADR 0022](adr/0022-pownforge-evidence-bridging.md)として、
+Evidenceの橋渡しを実装した(2026-09-29)。`ExtractEvidence`が
+PownForgeの`RunRecord.evidence`から`ContentHash`(`stdout_sha256`)を
+取り出し、`Normalize`が生成する全RawFindingへ`evidenceID`をスタンプ
+する。`Location`はCLI側でファイルパス/fetch URLから自動導出、HTTP API
+のembeddedモードのみ呼び出し元に必須で求める(サーバー側は出所を
+知りようがないため)。実PostgreSQL+実際の`pownforge scan nuclei`実行
+結果を取り込み、`riskforge evidence show`でContent Hashが本物の
+`stdout_sha256`と完全一致し、`riskforge finding show`でそのEvidenceが
+正しく紐づいていることを実機確認した。
+
+**これでユーザーから依頼された4点(ネットワーク経由fetch・target名の
+自動解決・HTTP APIエンドポイント・Evidenceの橋渡し)がすべて完了した。**
+PownForge連携(Phase 5)はADR 0015〜0022の8枚で、Scanner→RawFinding→
+Normalizer→Matcher→Adapter(fetch/normalize/evidence)→CLI/HTTP取り込み
+まで一気通貫で動作する。残るのは実際にPownForgeへネットワーク越しに
+到達する`fetch()`の認証(PownForge自身が持たないため現状は不要)、
+ATT&CK/CVSSフィールドの最終採用可否、`unknown_vulnerability`/
+`unclassified`ケースの永続化の運用(レビューUI等)である。
 
 ### 14.1 ATT&CK語彙の準備状況(PownForge側からの提案、記録のみ)
 

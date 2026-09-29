@@ -18,11 +18,13 @@ var version = "dev"
 // migrate directly. newHandler builds the HTTP API handler for `serve`
 // (ADR 0011); cmd/riskforge/main.go supplies internal/api.NewMux so this
 // package never imports internal/api itself. normalizePownForge/
-// fetchPownForge are `scanner import-pownforge`'s PownForge RunRecord
-// parser and HTTP fetcher (ADR 0018/0019/0020); cmd/riskforge/main.go
-// supplies internal/infrastructure/scanner/pownforge.Normalize/Fetch the
-// same way, so this package never imports internal/infrastructure either.
-func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher) *cobra.Command {
+// fetchPownForge/extractPownForgeEvidence are `scanner import-pownforge`'s
+// PownForge RunRecord parser, HTTP fetcher, and Evidence extractor (ADR
+// 0018/0019/0020/0022); cmd/riskforge/main.go supplies
+// internal/infrastructure/scanner/pownforge.Normalize/Fetch/ExtractEvidence
+// the same way, so this package never imports internal/infrastructure
+// either.
+func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher, extractPownForgeEvidence PownForgeEvidenceExtractor) *cobra.Command {
 	root := &cobra.Command{
 		Use:          "riskforge",
 		Short:        "Vulnerability & Exposure Management Platform",
@@ -46,8 +48,8 @@ func NewRootCommand(newService ServiceFactory, migrate func() error, newHandler 
 		newEvidenceCommand(newService),
 		newExceptionCommand(newService),
 		newTokenCommand(newService),
-		newScannerCommand(newService, normalizePownForge, fetchPownForge),
-		newServeCommand(newService, newHandler, normalizePownForge, fetchPownForge),
+		newScannerCommand(newService, normalizePownForge, fetchPownForge, extractPownForgeEvidence),
+		newServeCommand(newService, newHandler, normalizePownForge, fetchPownForge, extractPownForgeEvidence),
 	)
 
 	return root

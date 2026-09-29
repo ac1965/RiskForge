@@ -11,6 +11,7 @@ import (
 
 	"github.com/ac1965/riskforge/internal/application"
 	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
@@ -18,15 +19,17 @@ import (
 // application.Service. cmd/riskforge/main.go supplies internal/api.NewMux
 // here, so internal/cli never imports internal/api directly (ADR 0011):
 // internal/cli depends only on net/http (standard library) and
-// internal/application. The second/third parameters use the same raw,
-// unnamed function type PownForgeNormalizer/PownForgeFetcher alias in
-// scanner.go (ADR 0018/0020) -- see api.NewMux's doc comment (ADR 0021)
-// for why this signature must stay the literal unnamed type rather than
-// referencing either package's named alias.
+// internal/application. The 2nd-4th parameters use the same raw, unnamed
+// function types as PownForgeNormalizer/PownForgeFetcher/
+// PownForgeEvidenceExtractor in scanner.go (ADR 0018/0020/0022) -- see
+// api.NewMux's doc comment (ADR 0021) for why this signature must stay the
+// literal unnamed type rather than referencing either package's named
+// alias.
 type HandlerFactory func(
 	*application.Service,
-	func(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error),
+	func(payload []byte, assetID asset.ID, evidenceID evidence.ID) ([]rawfinding.RawFinding, error),
 	func(ctx context.Context, baseURL, runID string) ([]byte, error),
+	func(payload []byte, assetID asset.ID) (evidence.Params, error),
 ) http.Handler
 
 // newServeCommand adds `riskforge serve`, exposing the HTTP API decided
@@ -38,7 +41,7 @@ type HandlerFactory func(
 // a TLS-terminating reverse proxy sitting in front, with this command
 // itself still bound to localhost) is refused outright rather than left
 // as a foot-gun.
-func newServeCommand(newService ServiceFactory, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher) *cobra.Command {
+func newServeCommand(newService ServiceFactory, newHandler HandlerFactory, normalizePownForge PownForgeNormalizer, fetchPownForge PownForgeFetcher, extractPownForgeEvidence PownForgeEvidenceExtractor) *cobra.Command {
 	var addr, tlsCert, tlsKey string
 
 	cmd := &cobra.Command{
@@ -68,7 +71,7 @@ func newServeCommand(newService ServiceFactory, newHandler HandlerFactory, norma
 			if err != nil {
 				return fmt.Errorf("serve: listen on %s: %w", addr, err)
 			}
-			server := &http.Server{Handler: newHandler(svc, normalizePownForge, fetchPownForge)}
+			server := &http.Server{Handler: newHandler(svc, normalizePownForge, fetchPownForge, extractPownForgeEvidence)}
 
 			if tlsEnabled {
 				fmt.Fprintf(cmd.OutOrStdout(), "listening on %s (bearer-token auth required, TLS)\n", ln.Addr())

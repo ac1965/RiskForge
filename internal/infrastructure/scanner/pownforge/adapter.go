@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 )
 
 // runRecord mirrors the fields of PownForge's RunRecord
-// (src/pownforge/core/models/evidence.py) that Normalize needs. Every
-// other RunRecord field (evidence, output, analysis, via_target,
+// (src/pownforge/core/models/evidence.py) that Normalize/ExtractEvidence
+// need. Every other RunRecord field (output, analysis, via_target,
 // engagement, kill_chain_phase, artifacts, cves) is intentionally not
 // modeled here -- AGENTS.md §20A.1 ("外部APIのレスポンス形式をドメイン
 // モデルに直接漏らさない") means this struct exists only inside this
@@ -26,7 +27,22 @@ type runRecord struct {
 	Target    string      `json:"target"`
 	Plugin    string      `json:"plugin"`
 	CreatedAt time.Time   `json:"created_at"`
+	Evidence  pfEvidence  `json:"evidence"`
 	Findings  []pfFinding `json:"findings"`
+}
+
+// pfEvidence mirrors PownForge's Evidence (src/pownforge/core/models/
+// evidence.py) field-for-field. Command/ReturnCode/ToolVersion are parsed
+// but not used yet -- see ExtractEvidence's doc comment for what's
+// actually carried into evidence.Params today (ADR 0022).
+type pfEvidence struct {
+	Command      []string  `json:"command"`
+	StartedAt    time.Time `json:"started_at"`
+	FinishedAt   time.Time `json:"finished_at"`
+	ReturnCode   int       `json:"returncode"`
+	StdoutSHA256 string    `json:"stdout_sha256"`
+	StderrSHA256 string    `json:"stderr_sha256"`
+	ToolVersion  string    `json:"tool_version"`
 }
 
 // pfFinding mirrors PownForge's Finding (src/pownforge/core/models/
@@ -92,12 +108,62 @@ func Fetch(ctx context.Context, baseURL, runID string) ([]byte, error) {
 	return body, nil
 }
 
+// ExtractEvidence builds evidence.Params from a PownForge RunRecord JSON
+// payload's `evidence` sub-object, for the caller to pass to
+// application.Service.RecordEvidence before calling Normalize (ADR 0022 --
+// bridging PownForge's own run-level Evidence into RiskForge's Evidence
+// entity, AGENTS.md §20A.4). One RunRecord produces exactly one Evidence
+// record, shared by every Finding it contains (PownForge's `evidence`
+// covers the whole run, not one Finding), so this must be called once per
+// RunRecord, before Normalize (which then stamps every RawFinding with the
+// resulting evidence.ID) -- not once per Finding.
+//
+// Location is left empty here: unlike AssetID (which Normalize also takes
+// from the caller), there is no single right answer for "where is this
+// content" independent of how the caller obtained payload (a local file
+// path, a PownForge URL that was fetched, or an HTTP request body with no
+// location of its own) -- the caller fills Params.Location in before
+// calling RecordEvidence.
+//
+// ContentHash uses the run's stdout_sha256 (PownForge's plugin output --
+// where detection results and raw tool output live) rather than
+// stderr_sha256 or a hash spanning both: this is a deliberate, documented
+// choice, not an attempt to cover the run's complete output.
+func ExtractEvidence(payload []byte, assetID asset.ID) (evidence.Params, error) {
+	var run runRecord
+	if err := json.Unmarshal(payload, &run); err != nil {
+		return evidence.Params{}, fmt.Errorf("pownforge: parse run record: %w", err)
+	}
+
+	source := "pownforge"
+	if run.Plugin != "" {
+		source = "pownforge:" + run.Plugin
+	}
+
+	collectedAt := run.Evidence.FinishedAt
+	if collectedAt.IsZero() {
+		collectedAt = run.CreatedAt
+	}
+
+	return evidence.Params{
+		Type:        evidence.TypeDetectionResult,
+		Source:      source,
+		SourceRef:   run.RunID,
+		CollectedAt: collectedAt,
+		AssetID:     assetID,
+		ContentHash: run.Evidence.StdoutSHA256,
+	}, nil
+}
+
 // Normalize parses a PownForge RunRecord JSON payload into RawFindings for
-// the given RiskForge assetID (AGENTS.md §20: Scanner -> RawFinding).
-// Resolving PownForge's `target` (a scope-policy target name, not a
-// RiskForge Asset) to assetID -- e.g. via AssetRepository.FindByHostname --
-// is fetch()'s job, deferred to a future ADR along with actually reaching
-// a running PownForge instance; the caller supplies it here.
+// the given RiskForge assetID (AGENTS.md §20: Scanner -> RawFinding),
+// stamping each one with evidenceID (ADR 0022 -- the ID RecordEvidence
+// returned for ExtractEvidence's result; pass "" if the caller chose not
+// to record Evidence for this run, e.g. because ContentHash came back
+// empty). Resolving PownForge's `target` (a scope-policy target name, not
+// a RiskForge Asset) to assetID -- e.g. via AssetRepository.FindByHostname
+// -- is fetch()'s job, deferred to a future ADR along with actually
+// reaching a running PownForge instance; the caller supplies it here.
 //
 // A Finding with status "false-positive" is dropped entirely: a human
 // already reviewed it and determined it is not a real issue, so it is not
@@ -110,7 +176,7 @@ func Fetch(ctx context.Context, baseURL, runID string) ([]byte, error) {
 // behave differently) is skipped rather than failing the whole batch,
 // mirroring rawfinding's own "分類できないことを理由に、結果を破棄しない"
 // spirit -- but a malformed top-level payload is a real error.
-func Normalize(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error) {
+func Normalize(payload []byte, assetID asset.ID, evidenceID evidence.ID) ([]rawfinding.RawFinding, error) {
 	var run runRecord
 	if err := json.Unmarshal(payload, &run); err != nil {
 		return nil, fmt.Errorf("pownforge: parse run record: %w", err)
@@ -136,6 +202,7 @@ func Normalize(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error
 			Source:             source,
 			SourceRef:          sourceRef,
 			AssetID:            assetID,
+			EvidenceID:         evidenceID,
 			Title:              f.Title,
 			Detail:             f.Detail,
 			Confidence:         confidenceFromFinding(f),

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
+	"github.com/ac1965/riskforge/internal/domain/evidence"
 	"github.com/ac1965/riskforge/internal/domain/finding"
 	"github.com/ac1965/riskforge/internal/domain/rawfinding"
 	"github.com/ac1965/riskforge/internal/domain/vulnerability"
@@ -92,12 +93,32 @@ func (r *statefulVulnerabilitiesRepo) List(context.Context) ([]*vulnerability.Vu
 	return out, nil
 }
 
-// fakeNormalizePownForge/fakeFetchPownForge let each test control exactly
-// what POST /api/v1/scanner/pownforge-import's normalize/fetch steps
-// return, without depending on internal/infrastructure/scanner/pownforge
-// (this package must not import it -- see api.go's NewMux doc comment).
+// statefulEvidenceRepo is the same pattern again: verifying Evidence was
+// actually recorded (ADR 0022) needs a repo that remembers Save calls,
+// unlike api_test.go's stateless evidenceFake.
+type statefulEvidenceRepo struct {
+	byID map[evidence.ID]*evidence.Evidence
+}
 
-func fakeNormalizePownForge(payload []byte, assetID asset.ID) ([]rawfinding.RawFinding, error) {
+func newStatefulEvidenceRepo() *statefulEvidenceRepo {
+	return &statefulEvidenceRepo{byID: map[evidence.ID]*evidence.Evidence{}}
+}
+
+func (r *statefulEvidenceRepo) Save(_ context.Context, e *evidence.Evidence) error {
+	r.byID[e.ID] = e
+	return nil
+}
+func (r *statefulEvidenceRepo) FindByID(_ context.Context, id evidence.ID) (*evidence.Evidence, error) {
+	return r.byID[id], nil
+}
+
+// fakeNormalizePownForge/fakeFetchPownForge/fakeExtractPownForgeEvidence
+// let each test control exactly what POST /api/v1/scanner/pownforge-import's
+// normalize/fetch/evidence-extraction steps return, without depending on
+// internal/infrastructure/scanner/pownforge (this package must not import
+// it -- see api.go's NewMux doc comment).
+
+func fakeNormalizePownForge(payload []byte, assetID asset.ID, evidenceID evidence.ID) ([]rawfinding.RawFinding, error) {
 	var body struct {
 		Findings []struct {
 			Title string `json:"title"`
@@ -109,7 +130,7 @@ func fakeNormalizePownForge(payload []byte, assetID asset.ID) ([]rawfinding.RawF
 	out := make([]rawfinding.RawFinding, 0, len(body.Findings))
 	for _, f := range body.Findings {
 		rf, err := rawfinding.New(rawfinding.Params{
-			Source: "fake", AssetID: assetID, Title: f.Title,
+			Source: "fake", AssetID: assetID, EvidenceID: evidenceID, Title: f.Title,
 			Confidence: finding.ConfidenceMedium, CollectedAt: time.Now(),
 		})
 		if err != nil {
@@ -127,9 +148,32 @@ func fakeFetchPownForge(_ context.Context, baseURL, runID string) ([]byte, error
 	return []byte(`{"findings":[{"title":"fetched finding"}]}`), nil
 }
 
+// fakeExtractPownForgeEvidence mirrors the real ExtractEvidence's
+// ContentHash source (a payload's evidence.stdout_sha256), so tests can
+// exercise both "payload carries real evidence data" and "payload has none
+// (empty ContentHash), proceed without recording Evidence" without
+// depending on the real adapter package.
+func fakeExtractPownForgeEvidence(payload []byte, assetID asset.ID) (evidence.Params, error) {
+	var body struct {
+		Evidence struct {
+			StdoutSHA256 string `json:"stdout_sha256"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return evidence.Params{}, err
+	}
+	return evidence.Params{
+		Type:        evidence.TypeDetectionResult,
+		Source:      "fake",
+		AssetID:     assetID,
+		CollectedAt: time.Now(),
+		ContentHash: body.Evidence.StdoutSHA256,
+	}, nil
+}
+
 func newTestMuxWithPownForge(t *testing.T, f testServiceFakes) http.Handler {
 	t.Helper()
-	return NewMux(newTestService(t, f), fakeNormalizePownForge, fakeFetchPownForge)
+	return NewMux(newTestService(t, f), fakeNormalizePownForge, fakeFetchPownForge, fakeExtractPownForgeEvidence)
 }
 
 // seededAssetsRepo returns a statefulAssetsRepo with one Asset already
@@ -145,8 +189,9 @@ func TestImportPownForge_EmbeddedRunRecordWithAssetID(t *testing.T) {
 	mux := newTestMuxWithPownForge(t, testServiceFakes{assetsRepo: seededAssetsRepo("asset-1"), vulnerabilitiesRepo: newStatefulVulnerabilitiesRepo()})
 
 	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
-		"RunRecord": json.RawMessage(`{"findings":[{"title":"finding A"},{"title":"finding B"}]}`),
-		"AssetID":   "asset-1",
+		"RunRecord":    json.RawMessage(`{"findings":[{"title":"finding A"},{"title":"finding B"}]}`),
+		"AssetID":      "asset-1",
+		"SkipEvidence": true,
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -191,8 +236,9 @@ func TestImportPownForge_TargetResolvesAsset(t *testing.T) {
 	mux := newTestMuxWithPownForge(t, testServiceFakes{assetsRepo: newStatefulAssetsRepo(), vulnerabilitiesRepo: newStatefulVulnerabilitiesRepo()})
 
 	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
-		"RunRecord": json.RawMessage(`{"findings":[{"title":"x"}]}`),
-		"Target":    "lab-web",
+		"RunRecord":    json.RawMessage(`{"findings":[{"title":"x"}]}`),
+		"Target":       "lab-web",
+		"SkipEvidence": true,
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -261,9 +307,82 @@ func TestImportPownForge_RequiresScannerImportScope(t *testing.T) {
 	}
 }
 
+func TestImportPownForge_RejectsEmbeddedRunRecordWithoutLocationOrSkipEvidence(t *testing.T) {
+	mux := newTestMuxWithPownForge(t, testServiceFakes{})
+
+	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
+		"RunRecord": json.RawMessage(`{"findings":[]}`),
+		"AssetID":   "asset-1",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+// TestImportPownForge_RecordsEvidenceWhenPayloadHasIt is ADR 0022's core
+// case: a RunRecord whose evidence.stdout_sha256 is present, submitted
+// with Location, results in an actual Evidence record (not just a 200).
+func TestImportPownForge_RecordsEvidenceWhenPayloadHasIt(t *testing.T) {
+	evidenceRepo := newStatefulEvidenceRepo()
+	mux := newTestMuxWithPownForge(t, testServiceFakes{
+		assetsRepo:          seededAssetsRepo("asset-1"),
+		vulnerabilitiesRepo: newStatefulVulnerabilitiesRepo(),
+		evidenceRepo:        evidenceRepo,
+	})
+
+	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
+		"RunRecord": json.RawMessage(`{"evidence":{"stdout_sha256":"abc123"},"findings":[{"title":"x"}]}`),
+		"AssetID":   "asset-1",
+		"Location":  "file:///tmp/run.json",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(evidenceRepo.byID) != 1 {
+		t.Fatalf("evidence records saved = %d, want 1", len(evidenceRepo.byID))
+	}
+	for _, ev := range evidenceRepo.byID {
+		if ev.ContentHash != "abc123" {
+			t.Errorf("ContentHash = %q, want %q", ev.ContentHash, "abc123")
+		}
+		if ev.Location != "file:///tmp/run.json" {
+			t.Errorf("Location = %q, want %q", ev.Location, "file:///tmp/run.json")
+		}
+		if ev.AssetID != "asset-1" {
+			t.Errorf("AssetID = %q, want %q", ev.AssetID, "asset-1")
+		}
+	}
+}
+
+// TestImportPownForge_SkipsEvidenceWhenPayloadHasNone confirms an empty
+// evidence.stdout_sha256 (a hand-built payload with no `evidence`
+// sub-object, e.g. a test fixture) proceeds without recording Evidence
+// rather than failing the request -- even though Location was supplied.
+func TestImportPownForge_SkipsEvidenceWhenPayloadHasNone(t *testing.T) {
+	evidenceRepo := newStatefulEvidenceRepo()
+	mux := newTestMuxWithPownForge(t, testServiceFakes{
+		assetsRepo:          seededAssetsRepo("asset-1"),
+		vulnerabilitiesRepo: newStatefulVulnerabilitiesRepo(),
+		evidenceRepo:        evidenceRepo,
+	})
+
+	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
+		"RunRecord": json.RawMessage(`{"findings":[{"title":"x"}]}`),
+		"AssetID":   "asset-1",
+		"Location":  "file:///tmp/run.json",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(evidenceRepo.byID) != 0 {
+		t.Errorf("evidence records saved = %d, want 0 (payload had no evidence.stdout_sha256)", len(evidenceRepo.byID))
+	}
+}
+
 func TestImportPownForge_FetchFailureBecomes502(t *testing.T) {
 	mux := NewMux(newTestService(t, testServiceFakes{}), fakeNormalizePownForge,
-		func(context.Context, string, string) ([]byte, error) { return nil, errors.New("connection refused") })
+		func(context.Context, string, string) ([]byte, error) { return nil, errors.New("connection refused") },
+		fakeExtractPownForgeEvidence)
 
 	rec := postJSON(t, mux, testRawTokenScannerImport, "/api/v1/scanner/pownforge-import", map[string]any{
 		"PownForgeURL": "http://127.0.0.1:8000",

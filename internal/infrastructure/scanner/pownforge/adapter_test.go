@@ -1,6 +1,9 @@
 package pownforge
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/ac1965/riskforge/internal/domain/asset"
@@ -165,5 +168,67 @@ func TestNormalizeDefaultsSourceWhenPluginIsEmpty(t *testing.T) {
 	}
 	if len(rawFindings) != 1 || rawFindings[0].Source != "pownforge" {
 		t.Errorf("Normalize() Source = %q, want %q", rawFindings[0].Source, "pownforge")
+	}
+}
+
+// TestFetch runs against a real httptest.Server (not a mock of net/http),
+// serving the exact path shape PownForge's `GET /api/runs/{run_id}`
+// returns (src/pownforge/web/routers/runs.py), to confirm Fetch builds the
+// right URL and returns the body Normalize can then parse.
+func TestFetch(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(sampleRunRecordJSON))
+	}))
+	defer server.Close()
+
+	body, err := Fetch(context.Background(), server.URL, "run-abc123")
+	if err != nil {
+		t.Fatalf("Fetch() unexpected error: %v", err)
+	}
+	if gotPath != "/api/runs/run-abc123" {
+		t.Errorf("requested path = %q, want %q", gotPath, "/api/runs/run-abc123")
+	}
+
+	rawFindings, err := Normalize(body, asset.NewID())
+	if err != nil {
+		t.Fatalf("Normalize(Fetch() result) unexpected error: %v", err)
+	}
+	if len(rawFindings) != 3 {
+		t.Errorf("Normalize(Fetch() result) returned %d RawFindings, want 3", len(rawFindings))
+	}
+}
+
+// TestFetchTrimsTrailingSlashFromBaseURL confirms
+// "http://host:port/" and "http://host:port" produce the same request path.
+func TestFetchTrimsTrailingSlashFromBaseURL(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`{"run_id":"r","target":"t","plugin":"p","created_at":"2026-01-01T00:00:00Z","findings":[]}`))
+	}))
+	defer server.Close()
+
+	if _, err := Fetch(context.Background(), server.URL+"/", "run-1"); err != nil {
+		t.Fatalf("Fetch() unexpected error: %v", err)
+	}
+	if gotPath != "/api/runs/run-1" {
+		t.Errorf("requested path = %q, want %q", gotPath, "/api/runs/run-1")
+	}
+}
+
+// TestFetchReturnsErrorOnNon200 confirms a non-200 response (e.g. the
+// run-id doesn't exist, PownForge returns 404) becomes a Go error rather
+// than being silently treated as a body to parse.
+func TestFetchReturnsErrorOnNon200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"detail":"run not found"}`, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	if _, err := Fetch(context.Background(), server.URL, "does-not-exist"); err == nil {
+		t.Error("Fetch() with a 404 response: want error, got nil")
 	}
 }

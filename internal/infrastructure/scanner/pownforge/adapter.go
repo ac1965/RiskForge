@@ -1,8 +1,11 @@
 package pownforge
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -40,6 +43,53 @@ type pfFinding struct {
 	CVSSScore          *float64 `json:"cvss_score"`
 	CVSSVector         string   `json:"cvss_vector"`
 	NativeSeverity     string   `json:"native_severity"`
+}
+
+// maxResponseBytes caps how much of a PownForge response Fetch will read.
+// PownForge's `pownforge web serve` binds to 127.0.0.1 only by default and
+// has no request size limit of its own (docs/handbook.md §9), so this is a
+// defensive cap on this side, not a trust boundary PownForge itself
+// enforces.
+const maxResponseBytes = 50 << 20 // 50MiB
+
+// httpClient is package-level so tests can point Fetch at an
+// httptest.Server without a global timeout mismatch; production code
+// never overrides it.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// Fetch retrieves a PownForge RunRecord's JSON from a running `pownforge
+// web serve` instance's `GET /api/runs/{run_id}` (confirmed against
+// src/pownforge/web/routers/runs.py's `response_model=RunRecord`) and
+// returns the raw body for Normalize to parse. baseURL is the PownForge
+// web root (e.g. "http://127.0.0.1:8000"), with or without a trailing
+// slash. PownForge's Web API has no authentication of its own (it's
+// designed to stay bound to localhost, AGENTS.md is PownForge's, not
+// RiskForge's, but see PownForge docs/handbook.md §9), so this sends no
+// credentials.
+func Fetch(ctx context.Context, baseURL, runID string) ([]byte, error) {
+	url := strings.TrimRight(baseURL, "/") + "/api/runs/" + runID
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("pownforge: build request for %s: %w", url, err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("pownforge: fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("pownforge: read response from %s: %w", url, err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("pownforge: response from %s exceeds %d bytes", url, maxResponseBytes)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("pownforge: %s returned %s: %s", url, resp.Status, strings.TrimSpace(string(body)))
+	}
+	return body, nil
 }
 
 // Normalize parses a PownForge RunRecord JSON payload into RawFindings for

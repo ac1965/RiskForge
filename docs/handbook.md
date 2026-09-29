@@ -745,7 +745,8 @@ testcontainers-go関連の依存を`go.mod`/`go.sum`から落とさないよう�
   `manualExecutor`が唯一の実装で、実際のOSコマンド実行は行わない
 - PownForge連携(§20A): ADR 0015〜0022(第14章)で実装済み。残るのは
   ATT&CK/CVSSフィールドの最終採用可否、`unknown_vulnerability`/
-  `unclassified`ケースの永続化の運用(レビューUI等)
+  `unclassified`ケースの永続化の運用(レビューUI等)。PownForge側
+  [Issue #15](https://github.com/ac1965/PownForge/issues/15)で追跡
 
 ## 13. ADRダイジェスト(設計判断の索引)
 
